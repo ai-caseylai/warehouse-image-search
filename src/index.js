@@ -241,7 +241,7 @@ async function handlePhotos(req, env) {
     count: activeImages(reg).length,
     max: MAX_PER_CODE,
     added,
-    images: regImages(reg),
+    images: regActiveImages(reg),
     createdAt: reg.createdAt,
     name: reg.name || "",
     spec: reg.spec || "",

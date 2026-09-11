@@ -374,6 +374,18 @@
   </div>
 </div>
 
+<!-- 通用確認彈窗：內置瀏覽器（WeChat／Line 等 WebView）嘅原生 confirm() 會靜默失效，刪除確認一律改用它 -->
+<div class="mask" id="cfmMask" style="display:none;">
+  <div class="dupCard">
+    <h2 id="cfmTitle">確定操作</h2>
+    <div class="sub" id="cfmMsg" style="white-space:pre-line;"></div>
+    <div class="row">
+      <button class="btn danger" id="cfmOk">確定</button>
+      <button class="btn" id="cfmCancel">取消</button>
+    </div>
+  </div>
+</div>
+
 <nav>
   <button id="nav-cam"><span class="ico">📷</span>拍照編碼</button>
   <button id="nav-find"><span class="ico">🔍</span>查碼</button>
@@ -399,6 +411,30 @@ function fmtTime(iso) {
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+/* ===== 通用頁內確認框（Promise-based）=====
+   原生 confirm() 喺內置瀏覽器（WeChat／Line／FB 等 WebView）會靜默 return false，
+   令刪除掣「撳唔到」。所有確認場景（刪除／還原／硬刪除）一律用呢個，
+   用法：if (!(await confirmDialog({ title, msg, okText }))) return; */
+let confirmResolve = null;
+function confirmDialog({ title = "確定操作", msg = "", okText = "確定", danger = true } = {}) {
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+    $("cfmTitle").textContent = title;
+    $("cfmMsg").textContent = msg;
+    const ok = $("cfmOk");
+    ok.textContent = okText;
+    ok.className = "btn " + (danger ? "danger" : "primary");
+    $("cfmMask").style.display = "grid";
+  });
+}
+function closeConfirm(result) {
+  $("cfmMask").style.display = "none";
+  if (confirmResolve) { const done = confirmResolve; confirmResolve = null; done(result); }
+}
+$("cfmOk").onclick = () => closeConfirm(true);
+$("cfmCancel").onclick = () => closeConfirm(false);
+$("cfmMask").onclick = (e) => { if (e.target === $("cfmMask")) closeConfirm(false); };
 
 /* ===== 貨品資料（名稱／規格／價錢）===== */
 let curInfo = { name: "", spec: "", price: "", size: "" };
@@ -896,7 +932,7 @@ async function refreshAfterDelete(code) {
   }
 }
 async function quickDelete(key) {
-  if (!confirm("確定刪除此相片？\n其他相片會保留，刪除後無法復原。")) return;
+  if (!(await confirmDialog({ title: "確定刪除此相片？", msg: "其他相片會保留。\n軟刪除，日後可還原。", okText: "🗑 刪除" }))) return;
   const m = key.match(/^img\/(\d{12})\//);
   const code = m ? m[1] : null;
   try {
@@ -912,7 +948,7 @@ function openViewer(im) {
   viewerKey = im.key;
   const m = im.key.match(/^img\/(\d{12})\//);
   $("viewerTitle").textContent = m ? "碼 " + m[1] : "相片預覽";
-  $("viewerSub").textContent = "第 " + im.seq + " 張・刪除後無法復原";
+  $("viewerSub").textContent = "第 " + im.seq + " 張・軟刪除，日後可還原";
   $("viewerImg").src = im.url;
   $("imgMask").style.display = "grid";
 }
@@ -1075,7 +1111,7 @@ $("codeInput").addEventListener("input", () => { $("codeInput").value = $("codeI
 $("foundDel").onclick = async () => {
   const code = $("foundCard").dataset.code;
   if (!code) return;
-  if (!confirm(`確定刪除碼 ${code} 及其全部相片？`)) return;
+  if (!(await confirmDialog({ title: `確定刪除碼 ${code}？`, msg: "會刪除此碼及其全部相片。\n軟刪除，日後可還原。", okText: "🗑 刪除整個碼" }))) return;
   const r = await fetch("/codes/" + code, { method: "DELETE" });
   const d = await r.json();
   if (r.ok) {
