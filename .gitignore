@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Wrangler cache
+.wrangler/
+
+# Backup files
+*.bak
+*.bak2
+*.bak3
+
+# OS files
+.DS_Store
+
+# Debug screenshots
+shot-debug-*.png

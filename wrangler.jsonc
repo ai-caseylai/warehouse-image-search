@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "image-vector-search",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-01",
+  "assets": { "directory": "./assets", "binding": "ASSETS", "run_worker_first": true },
+  "vars": { "EMBED_MODEL": "tongyi-embedding-vision-flash", "DUP_THRESHOLD": "0.85", "VISION_MODEL": "qwen-vl-max" },
+  "r2_buckets": [
+    { "binding": "IMAGES", "bucket_name": "image-vectors" }
+  ],
+  "vectorize": [
+    { "binding": "VECTOR_INDEX", "index_name": "image-vectors" }
+  ]
+}

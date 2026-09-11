@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F5F7">
+<title>大家庭集團貨品條碼庫</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "PingFang HK", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    background: #F4F5F7; color: #1C1C1E;
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 14px 14px 0; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 2px 12px; }
+  header h1 { font-size: 19px; font-weight: 700; letter-spacing: .3px; }
+  .chip { font-size: 11px; padding: 4px 9px; border-radius: 999px; background: #EEE; color: #666; white-space: nowrap; }
+  .chip.live { background: #E1F6E7; color: #1E8E3E; }
+  .chip.err { background: #FDECEC; color: #D93025; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,.10); padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 14px; font-weight: 700; margin-bottom: 10px; color: #1C1C1E; }
+  .hint { font-size: 12px; color: #8E8E93; line-height: 1.5; margin-top: 8px; }
+  section { display: none; }
+  section.active { display: block; }
+
+  /* ===== 鏡頭 ===== */
+  #camStage, #scanStage, #searchStage { position: relative; border-radius: 10px; overflow: hidden; aspect-ratio: 4/3; background: #000; }
+  #camStage::before, #searchStage::before {
+    content: ""; position: absolute; inset: 0; z-index: 0; opacity: .5;
+    background-image: linear-gradient(rgba(0,122,255,.16) 1px, transparent 1px), linear-gradient(90deg, rgba(0,122,255,.16) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; background: #000; z-index: 1; }
+  .corner { position: absolute; width: 34px; height: 34px; z-index: 3; border: 3px solid #FF9500; }
+  .corner.tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; border-radius: 6px 0 0 0; }
+  .corner.tr { top: 12px; right: 12px; border-left: 0; border-bottom: 0; border-radius: 0 6px 0 0; }
+  .corner.bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; border-radius: 0 0 0 6px; }
+  .corner.br { bottom: 12px; right: 12px; border-left: 0; border-top: 0; border-radius: 0 0 6px 0; }
+  .camPh { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; text-align: center; padding: 18px; }
+  .camPh .big { font-size: 34px; }
+  .camPh .t { font-size: 14px; font-weight: 600; margin-top: 8px; color: #fff; }
+  .camPh .s { font-size: 12px; margin-top: 5px; color: rgba(255,255,255,.75); line-height: 1.5; }
+  .flip { position: absolute; top: 10px; right: 10px; z-index: 4; width: 34px; height: 34px; border-radius: 50%; border: 0; background: rgba(0,0,0,.45); color: #fff; font-size: 16px; }
+  .stageChip { position: absolute; left: 10px; bottom: 10px; z-index: 4; font-size: 11px; padding: 4px 9px; border-radius: 999px; background: rgba(0,0,0,.55); color: #fff; }
+  .scanLine { position: absolute; left: 8%; right: 8%; height: 2px; background: #FF9500; z-index: 3; box-shadow: 0 0 8px #FF9500; animation: scan 2.2s ease-in-out infinite; display: none; }
+  @keyframes scan { 0%,100% { top: 18%; } 50% { top: 80%; } }
+  #scanStage.scanning .scanLine { display: block; }
+
+  /* ===== 按鈕 ===== */
+  .btn { display: inline-block; border: 0; border-radius: 10px; padding: 12px 16px; font-size: 15px; font-weight: 600; background: #E5E5EA; color: #1C1C1E; cursor: pointer; }
+  .btn.primary { background: #007AFF; color: #fff; }
+  .btn.green { background: #1E8E3E; color: #fff; }
+  .btn.orange { background: #FF9500; color: #fff; }
+  .btn.danger { background: #FDECEC; color: #D93025; }
+  .btn.big { width: 100%; padding: 15px; font-size: 17px; border-radius: 12px; }
+  .btn[disabled] { opacity: .45; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  .row .btn { flex: 1; }
+  .ghost { display: inline-block; margin-top: 10px; font-size: 13px; color: #007AFF; background: none; border: 0; padding: 4px; }
+
+  /* ===== 碼卡 ===== */
+  #codeCard { border: 2px solid #007AFF; }
+  .codeHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .codeHead .label { font-size: 12px; color: #8E8E93; }
+  .badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: #E1F6E7; color: #1E8E3E; }
+  .badge.full { background: #FFF3E0; color: #B26A00; }
+  .barcodeBox { background: #fff; border: 1px solid #E5E5EA; border-radius: 8px; padding: 10px 8px 6px; }
+  .barcodeBox svg { display: block; width: 100%; height: 58px; }
+  .codeNum { font-family: ui-monospace, "SF Mono", Menlo, monospace; text-align: center; font-size: 21px; font-weight: 700; letter-spacing: 4px; margin-top: 6px; }
+  .thumbs { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .thumbs img { width: 52px; height: 52px; object-fit: cover; border-radius: 8px; border: 1px solid #E5E5EA; }
+  .thumbs .slot { width: 52px; height: 52px; border-radius: 8px; border: 1.5px dashed #C7C7CC; display: grid; place-items: center; color: #C7C7CC; font-size: 12px; }
+  .thumbs .th { position: relative; display: inline-block; cursor: pointer; }
+  .thumbs .th img { display: block; }
+  .thumbs .th .del { position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%; background: #D93025; color: #fff; font-size: 10px; line-height: 17px; text-align: center; border: 1.5px solid #fff; }
+
+  /* ===== 貨品資料表格 ===== */
+  .field { margin-bottom: 8px; }
+  .field label { display: block; font-size: 12px; color: #8E8E93; margin-bottom: 3px; }
+  .field input { width: 100%; border: 1px solid #D1D1D6; border-radius: 10px; padding: 10px 12px; font-size: 15px; background: #fff; color: #1C1C1E; }
+  .infoLine { font-size: 13px; color: #1C1C1E; margin-top: 8px; line-height: 1.6; }
+  .infoLine .price { color: #D93025; font-weight: 700; }
+  .viewerCard.dupCard img { width: 100%; max-height: 350px; object-fit: contain; background: #000; border-radius: 12px; border: 0; margin-top: 6px; }
+  .photos { position: relative; }
+
+  /* ===== 查碼／搜尋輸入 ===== */
+  .findRow { display: flex; gap: 8px; }
+  .findRow input { flex: 1; border: 1px solid #D1D1D6; border-radius: 10px; padding: 12px; font-size: 16px; }
+  .findRow input.mono { font-family: ui-monospace, Menlo, monospace; letter-spacing: 2px; }
+  .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+  .photos .phTh { position: relative; cursor: pointer; }
+  .photos .phTh img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; display: block; border: 1px solid #E5E5EA; }
+  .photos .phTh .del { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; background: #D93025; color: #fff; font-size: 11px; line-height: 19px; text-align: center; border: 1.5px solid #fff; z-index: 2; }
+  .meta { font-size: 12px; color: #8E8E93; margin-top: 8px; }
+  .recent { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid #F2F2F7; cursor: pointer; }
+  .recent:last-child { border-bottom: 0; }
+  .recent img { width: 46px; height: 46px; object-fit: cover; border-radius: 8px; background: #EEE; }
+  .recent .rc { font-family: ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 600; letter-spacing: 1px; }
+  .recent .rt { font-size: 11px; color: #8E8E93; margin-top: 2px; }
+  .recent .cnt { margin-left: auto; font-size: 11px; font-weight: 700; color: #1E8E3E; background: #E1F6E7; padding: 3px 8px; border-radius: 999px; }
+  .empty { text-align: center; color: #8E8E93; font-size: 13px; padding: 18px 0; }
+
+  /* ===== 搜尋結果卡 ===== */
+  .sresult { cursor: pointer; border: 1px solid #E5E5EA; }
+  .sresult:active { background: #F0F6FF; }
+  .srRow { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .srRow img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; border: 1px solid #E5E5EA; }
+  .srCode { font-family: ui-monospace, Menlo, monospace; font-size: 18px; font-weight: 700; letter-spacing: 2px; }
+  .srTime { font-size: 11px; color: #8E8E93; margin-top: 3px; }
+  .simBadge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: #E1F6E7; color: #1E8E3E; }
+
+  /* ===== 以圖搜碼結果彈窗 ===== */
+  .searchResCard { max-height: min(76vh, 620px); display: flex; flex-direction: column; }
+  .searchResScroll { overflow-y: auto; -webkit-overflow-scrolling: touch; margin: 0 -6px; padding: 0 6px; text-align: left; }
+  .sresItem { padding: 12px 4px 10px; border-bottom: 1px solid #F2F2F7; cursor: pointer; border-radius: 8px; }
+  .sresItem:last-child { border-bottom: 0; }
+  .sresItem:active { background: #F0F6FF; }
+  .sresName { font-size: 15px; margin-top: 6px; text-align: center; }
+  .sresPrice { font-size: 15px; font-weight: 700; color: #1E8E3E; text-align: center; margin-top: 3px; }
+  .sresSpec { font-size: 12px; color: #666; text-align: center; margin-top: 3px; }
+
+  /* ===== 重複入庫彈窗 ===== */
+  .mask { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.55); display: grid; place-items: center; padding: 20px; }
+  .dupCard { background: #fff; border-radius: 16px; padding: 20px; max-width: 340px; width: 100%; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
+  .dupCard h2 { font-size: 17px; margin-bottom: 6px; }
+  .dupCard .sub { font-size: 13px; color: #8E8E93; margin-bottom: 12px; }
+  .dupCard img { width: 120px; height: 120px; object-fit: cover; border-radius: 12px; border: 2px solid #FF9500; }
+  .dupCard .codeNum { font-size: 18px; letter-spacing: 3px; }
+  .dupCard .row { margin-top: 14px; }
+
+  /* ===== 底部導航 ===== */
+  nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    display: flex; background: rgba(255,255,255,.92); backdrop-filter: blur(16px);
+    border-top: 1px solid #E5E5EA; padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav button { flex: 1; border: 0; background: none; padding: 9px 0 7px; font-size: 11px; color: #8E8E93; }
+  nav button .ico { display: block; font-size: 22px; margin-bottom: 2px; }
+  nav button.active { color: #007AFF; font-weight: 700; }
+
+  .toast { position: fixed; left: 50%; bottom: calc(86px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px); background: rgba(28,28,30,.92); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 12px; opacity: 0; pointer-events: none; transition: .25s; z-index: 99; max-width: 86vw; text-align: center; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { background: #D93025; }
+  #flashfx { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 58; }
+  #flashfx.on { animation: flash .35s ease-out; }
+  @keyframes flash { 0% { opacity: .9; } 100% { opacity: 0; } }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📦 大家庭貨品條碼庫</h1>
+    <span id="camStatus" class="chip">鏡頭啟動中…</span>
+  </header>
+
+  <!-- ============ 分頁 1：拍照編碼 ============ -->
+  <section id="view-cam">
+    <div class="card" style="padding:8px;">
+      <div id="camStage">
+        <video id="heroVideo" autoplay playsinline muted></video>
+        <div class="camPh" id="camPlaceholder">
+          <div>
+            <div class="big" id="phEmoji">📷</div>
+            <div class="t" id="phText">啟動鏡頭中…</div>
+            <div class="s" id="phSub"></div>
+            <button class="btn primary" id="phBtn" style="margin-top:10px; display:none;">允許並啟動鏡頭</button>
+          </div>
+        </div>
+        <div class="corner tl"></div><div class="corner tr"></div>
+        <div class="corner bl"></div><div class="corner br"></div>
+        <button class="flip" id="camFlip" title="翻轉鏡頭">🔄</button>
+        <span class="stageChip" id="stageChip">📷 對準貨品</span>
+      </div>
+    </div>
+
+    <div class="card" id="itemCard" style="margin-top:12px;">
+      <div class="codeHead">
+        <h2 style="margin:0;">📋 貨品資料</h2>
+        <span class="chip" id="itemBindChip">新貨品・未綁定</span>
+      </div>
+      <div class="field"><label for="itemName">貨物名稱</label><input id="itemName" maxlength="60" placeholder="例如：藍色圓領 T 恤"></div>
+      <div class="field"><label for="itemSpec">規格</label><input id="itemSpec" maxlength="60" placeholder="例如：尺碼 XL／棉質／200g"></div>
+      <div class="field"><label for="itemPrice">價錢</label><input id="itemPrice" inputmode="decimal" maxlength="20" placeholder="例如：99 或 99.5"></div>
+      <div class="field" style="margin-bottom:2px;">
+        <label for="itemSize">尺寸（闊 × 高）</label>
+        <div style="display:flex; gap:8px;">
+          <input id="itemSize" maxlength="30" placeholder="例如：12 × 8 cm" style="flex:1; width:auto; min-width:0;">
+          <button class="btn" id="estBtn" type="button" style="padding:10px 12px; white-space:nowrap;">🤖 AI 粗估</button>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; background:#F2F2F7; border-radius:10px; padding:10px 12px; margin-bottom:6px;">
+        <span style="font-size:14px;">📦 同款多尺寸模式</span>
+        <input type="checkbox" id="multiSizeChk" style="width:22px; height:22px; accent-color:#007AFF;">
+      </div>
+      <p class="hint" style="margin-top:0;">開啟後：拍一次相，即可一次過建立多個碼——適合外貌一樣但尺寸不同的貨物（名稱／規格／價錢共用，尺寸逐個輸入）。</p>
+      <button class="btn primary big" id="saveInfoBtn" style="display:none; margin-top:8px;">💾 保存貨品資料</button>
+      <p class="hint">可以先填寫資料再拍照，資料會自動綁定新碼。把貨品放在方格紙（每格 1cm）上拍照後，可按「🤖 AI 粗估」自動估算尺寸——屬輔助參考，誤差約 ±30%，請以實物量度為準。</p>
+    </div>
+
+    <button class="btn primary big" id="shootBtn" style="margin-top:10px;">📸 拍照・自動編碼</button>
+    <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+    <button class="ghost" id="sysCamBtn" style="width:100%; text-align:center;">或選擇相片／使用系統相機 ➜</button>
+
+    <div class="card" id="multiPanel" style="display:none; margin-top:12px; border:2px solid #FF9500;">
+      <div class="codeHead">
+        <h2 style="margin:0;">📦 同款多尺寸・批量建立</h2>
+        <button class="btn" id="multiClose" type="button" style="padding:6px 12px;">✕</button>
+      </div>
+      <img id="multiThumb" alt="剛拍下的相片" style="width:100%; max-height:220px; object-fit:contain; background:#000; border-radius:12px; margin:8px 0;">
+      <p class="hint" style="margin-top:0;">這張相片會用於以下每個碼。請逐行輸入每個尺寸（名稱／規格／價錢沿用上面的貨品資料）。</p>
+      <div id="multiRows"></div>
+      <button class="btn" id="multiAddRow" type="button" style="width:100%; margin-top:6px;">➕ 加一個尺寸</button>
+      <button class="btn primary big" id="multiGo" type="button" style="width:100%; margin-top:10px;" disabled>✅ 建立 <span id="multiGoN">0</span> 個碼</button>
+      <div id="multiResults"></div>
+    </div>
+
+    <div class="card" id="codeCard" style="display:none; margin-top:12px;">
+      <div class="codeHead">
+        <span class="label" id="codeLabel">目前貨品碼</span>
+        <span class="badge" id="countBadge">1/6 張</span>
+      </div>
+      <div class="barcodeBox" id="barcodeBox"></div>
+      <div class="codeNum" id="codeNum"></div>
+      <div class="infoLine" id="codeInfoLine" style="display:none;"></div>
+      <div class="thumbs" id="thumbs"></div>
+      <div class="row">
+        <button class="btn green" id="sameBtn">📸 繼續拍同一碼</button>
+        <button class="btn" id="newBtn">✅ 完成・下一件</button>
+      </div>
+      <p class="hint">同一件貨最多 6 張角度相，全部共用同一個 12 位一維碼。按縮圖上的 ✕ 可以獨立刪除某一張相片。</p>
+    </div>
+    <p class="hint" style="padding: 0 4px;">💡 拍照後系統會自動比對資料庫：如果貨品已經入庫，會立即提示你，避免重複建碼。</p>
+  </section>
+
+  <!-- ============ 分頁 2：查碼 ============ -->
+  <section id="view-find">
+    <div class="card" style="padding:8px;">
+      <div id="scanStage">
+        <video id="scanVideo" autoplay playsinline muted></video>
+        <div class="camPh" id="scanPh">
+          <div>
+            <div class="big">🔍</div>
+            <div class="t" id="scanPhText">啟動掃描鏡頭…</div>
+            <div class="s" id="scanPhSub"></div>
+          </div>
+        </div>
+        <div class="corner tl"></div><div class="corner tr"></div>
+        <div class="corner bl"></div><div class="corner br"></div>
+        <div class="scanLine"></div>
+        <span class="stageChip">掃 12 位條碼</span>
+      </div>
+      <p class="hint" id="scanHint" style="padding: 8px 6px 2px;">對準貨品上的 12 位條碼就會自動找出相片。</p>
+    </div>
+
+    <div class="card">
+      <h2>手動輸入碼</h2>
+      <div class="findRow">
+        <input id="codeInput" class="mono" inputmode="numeric" maxlength="12" placeholder="12 位數字碼">
+        <button class="btn primary" id="findBtn">查相</button>
+      </div>
+    </div>
+
+    <div class="card" id="foundCard" style="display:none;">
+      <div class="codeHead">
+        <span class="label">查碼結果</span>
+        <span class="badge" id="foundBadge"></span>
+      </div>
+      <div class="barcodeBox" id="foundBarcode"></div>
+      <div class="codeNum" id="foundNum"></div>
+      <div class="infoLine" id="foundInfoLine" style="display:none;"></div>
+      <div class="photos" id="foundPhotos"></div>
+      <p class="hint">按相片上的 ✕ 可以獨立刪除某一張相片（其他相片不受影響）；按相片可以預覽。</p>
+      <div class="meta" id="foundMeta"></div>
+      <div class="row">
+        <button class="btn orange" id="foundAdd">📸 補拍至此碼</button>
+        <button class="btn" id="foundEdit">✏️ 編輯資料</button>
+      </div>
+      <div class="row">
+        <button class="btn danger" id="foundDel">🗑 刪除整個碼</button>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ============ 分頁 3：智能搜尋 ============ -->
+  <section id="view-search" class="active">
+    <div class="card" style="padding:8px;">
+      <div id="searchStage">
+        <video id="searchVideo" autoplay playsinline muted></video>
+        <div class="camPh" id="searchPh">
+          <div>
+            <div class="big">📷</div>
+            <div class="t" id="searchPhText">啟動鏡頭中…</div>
+            <div class="s" id="searchPhSub"></div>
+          </div>
+        </div>
+        <div class="corner tl"></div><div class="corner tr"></div>
+        <div class="corner bl"></div><div class="corner br"></div>
+        <span class="stageChip">📷 對準貨品・即拍即搜</span>
+      </div>
+    </div>
+    <button class="btn orange big" id="searchShootBtn" style="margin-bottom:12px;">📸 拍照・以圖搜碼</button>
+
+    <div class="card">
+      <h2>🔤 用文字查貨品碼</h2>
+      <div class="findRow">
+        <input id="textQ" placeholder="例如：藍色 T 恤、紙箱、電鑽…">
+        <button class="btn primary" id="textBtn">搜尋</button>
+      </div>
+    </div>
+    <div id="searchResults"></div>
+  </section>
+</div>
+
+<!-- 重複入庫彈窗 -->
+<div class="mask" id="dupMask" style="display:none;">
+  <div class="dupCard">
+    <h2>⚠️ 這件貨可能已經入庫</h2>
+    <div class="sub" id="dupSub">相似度 92%</div>
+    <div class="sub" id="dupSize" style="display:none;"></div>
+    <img id="dupImg" alt="已入庫相片">
+    <div class="barcodeBox" id="dupBarcode" style="margin-top:12px;"></div>
+    <div class="codeNum" id="dupCode"></div>
+    <div class="row">
+      <button class="btn green" id="dupAdd">歸入此碼</button>
+      <button class="btn" id="dupNew">仍然開新碼</button>
+    </div>
+    <button class="ghost" id="dupCancel">取消（不入庫）</button>
+  </div>
+</div>
+
+<!-- 以圖搜碼結果彈窗 -->
+<div class="mask" id="searchMask" style="display:none;">
+  <div class="dupCard searchResCard">
+    <h2>🖼 以圖搜碼結果</h2>
+    <div class="sub" id="searchResSub"></div>
+    <div class="searchResScroll" id="searchResList"></div>
+    <button class="btn" id="searchResClose" style="width:100%; margin-top:12px;">關閉</button>
+  </div>
+</div>
+
+<!-- 相片預覽／刪除彈窗 -->
+<div class="mask" id="imgMask" style="display:none;">
+  <div class="dupCard viewerCard">
+    <h2 id="viewerTitle">相片預覽</h2>
+    <div class="sub" id="viewerSub"></div>
+    <img id="viewerImg" alt="相片預覽">
+    <div class="row">
+      <button class="btn danger" id="viewerDel">🗑 刪除此相片</button>
+      <button class="btn" id="viewerClose">關閉</button>
+    </div>
+  </div>
+</div>
+
+<!-- 編輯貨品資料彈窗 -->
+<div class="mask" id="infoMask" style="display:none;">
+  <div class="dupCard viewerCard">
+    <h2>✏️ 編輯貨品資料</h2>
+    <div class="sub" id="infoEditCode"></div>
+    <div class="field" style="text-align:left;"><label for="editName">貨物名稱</label><input id="editName" maxlength="60" placeholder="例如：藍色圓領 T 恤"></div>
+    <div class="field" style="text-align:left;"><label for="editSpec">規格</label><input id="editSpec" maxlength="60" placeholder="例如：尺碼 XL／棉質"></div>
+    <div class="field" style="text-align:left;"><label for="editPrice">價錢</label><input id="editPrice" inputmode="decimal" maxlength="20" placeholder="例如：99 或 99.5"></div>
+    <div class="field" style="text-align:left; margin-bottom:2px;"><label for="editSize">尺寸（闊 × 高）</label><input id="editSize" maxlength="30" placeholder="例如：12 × 8 cm"></div>
+    <div class="row">
+      <button class="btn primary" id="infoSaveBtn">💾 保存</button>
+      <button class="btn" id="infoCancelBtn">取消</button>
+    </div>
+  </div>
+</div>
+
+<nav>
+  <button id="nav-cam"><span class="ico">📷</span>拍照編碼</button>
+  <button id="nav-find"><span class="ico">🔍</span>查碼</button>
+  <button id="nav-search" class="active"><span class="ico">🧲</span>智能搜尋</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+<div id="flashfx"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let toastTimer;
+function toast(msg, kind) {
+  const t = $("toast");
+  t.textContent = msg; t.className = "toast show" + (kind === "err" ? " err" : "");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = "toast", 3200);
+}
+function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return `${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+}
+function esc(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ===== 貨品資料（名稱／規格／價錢）===== */
+let curInfo = { name: "", spec: "", price: "", size: "" };
+function infoHTML(info) {
+  const parts = [];
+  if (info.name) parts.push("📛 <b>" + esc(info.name) + "</b>");
+  if (info.size) parts.push("📐 " + esc(info.size));
+  if (info.spec) parts.push("📏 " + esc(info.spec));
+  if (info.price) parts.push('<span class="price">💰 ' + esc(info.price) + "</span>");
+  return parts.join(" ｜ ");
+}
+function renderInfoLine(el, info) {
+  const html = infoHTML(info);
+  el.style.display = html ? "block" : "none";
+  el.innerHTML = html;
+}
+function applyServerInfo(d) {
+  curInfo = { name: d.name || "", spec: d.spec || "", price: d.price || "", size: d.size || "" };
+}
+function bindItemCard(code) {
+  $("itemBindChip").textContent = "已綁定 " + code;
+  $("itemBindChip").className = "chip live";
+  $("saveInfoBtn").style.display = "block";
+}
+function clearItemCard() {
+  $("itemName").value = ""; $("itemSpec").value = ""; $("itemPrice").value = ""; $("itemSize").value = "";
+  $("itemBindChip").textContent = "新貨品・未綁定";
+  $("itemBindChip").className = "chip";
+  $("saveInfoBtn").style.display = "none";
+}
+function appendInfoFields(fd) {
+  const nm = $("itemName").value.trim(), sp = $("itemSpec").value.trim(), pr = $("itemPrice").value.trim(), sz = $("itemSize").value.trim();
+  if (nm) fd.append("name", nm);
+  if (sp) fd.append("spec", sp);
+  if (pr) fd.append("price", pr);
+  if (sz) fd.append("size", sz);
+}
+
+/* ===== Code 128（subset C）一維碼生成 ===== */
+const C128P = ["212222","222122","222221","121223","121322","131222","122213","122312","132212","221213","221312","231212","112232","122132","122231","113222","123122","123221","223211","221132","221231","213212","223112","312131","311222","321122","321221","312212","322112","322211","212123","212321","232121","111323","131123","131321","112313","132113","132311","211313","231113","231311","112133","112331","132131","113123","113321","133121","313121","211331","231131","213113","213311","213131","311123","311321","331121","312113","312311","332111","314111","221411","431111","111224","111422","121124","121421","141122","141221","112214","112412","122114","122411","142112","142211","241211","221114","413111","241112","134111","111242","121142","121241","114212","124112","124211","411212","421112","421211","212141","214121","412121","111143","111341","131141","114113","114311","411113","411311","113141","114131","311141","411131","211412","211214","211232"];
+function barcodeSVG(code) {
+  const digits = String(code).replace(/\D/g, "");
+  if (digits.length % 2 !== 0 || digits.length < 2) return "";
+  const vals = [105]; // Start C
+  for (let i = 0; i < digits.length; i += 2) vals.push(parseInt(digits.slice(i, i + 2), 10));
+  let sum = vals[0];
+  for (let i = 1; i < vals.length; i++) sum += i * vals[i];
+  vals.push(sum % 103);
+  const seqs = vals.map((v) => C128P[v]); seqs.push("2331112"); // Stop
+  let x = 0; const rects = [];
+  for (const seq of seqs) {
+    for (let i = 0; i < seq.length; i++) {
+      const w = +seq[i];
+      if (i % 2 === 0) rects.push(`<rect x="${x}" width="${w}" y="0" height="60"/>`);
+      x += w;
+    }
+  }
+  const Q = 10;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-Q} 0 ${x + Q * 2} 60" preserveAspectRatio="xMidYMid meet" fill="#111">${rects.join("")}</svg>`;
+}
+
+/* ===== 鏡頭管理 ===== */
+let stream = null, facing = "environment", camState = "off", activeView = "search", camRetries = 0, autoFixTries = 0;
+const VIDEOS = { cam: $("heroVideo"), scan: $("scanVideo"), search: $("searchVideo") };
+function videoFor(view) { return view === "find" ? VIDEOS.scan : view === "search" ? VIDEOS.search : VIDEOS.cam; }
+
+/* ===== 詳細診斷日誌 ===== */
+const dbgLines = [];
+function dbg(msg) {
+  const t = new Date().toTimeString().slice(0, 8);
+  dbgLines.push("[" + t + "] " + msg);
+  if (dbgLines.length > 100) dbgLines.shift();
+  const el = $("dbgLog");
+  if (el) { el.textContent = dbgLines.join("\n"); el.scrollTop = el.scrollHeight; }
+}
+function openDebug() {}
+function isLikelyInApp() {
+  const ua = navigator.userAgent || "";
+  return /Electron|WebView|; wv|FBAN|FBAV|MicroMessenger|Line\//i.test(ua);
+}
+
+function setCamUI(state, errName) {
+  camState = state;
+  dbg("鏡頭狀態 → " + state + (errName ? "（" + errName + "）" : ""));
+  if (state === "denied" || state === "unsupported") openDebug();
+  const live = state === "live";
+  const chip = $("camStatus");
+  chip.className = "chip" + (live ? " live" : (state === "denied" || state === "unsupported" ? " err" : ""));
+  chip.textContent = live ? "鏡頭已啟動" : state === "starting" ? "鏡頭啟動中…" : state === "paused" ? "鏡頭已暫停" : "鏡頭未啟動";
+  $("camPlaceholder").style.display = live ? "none" : "grid";
+  $("scanPh").style.display = live ? "none" : "grid";
+  $("searchPh").style.display = live ? "none" : "grid";
+  VIDEOS.cam.style.display = live ? "block" : "none";
+  VIDEOS.scan.style.display = live ? "block" : "none";
+  VIDEOS.search.style.display = live ? "block" : "none";
+  $("scanStage").classList.toggle("scanning", live && activeView === "find");
+  const phBtn = $("phBtn"); phBtn.style.display = "none";
+  let phText = "", phSub = "", phEmoji = "📷";
+  if (state === "starting") phText = "啟動鏡頭中…";
+  else if (state === "denied") {
+    if (errName === "inapp") {
+      phEmoji = "🔒"; phText = "此內置瀏覽器無法開啟鏡頭";
+      phSub = "請複製上方網址，用 Safari／Chrome 開啟；或按「選擇相片／使用系統相機」";
+    } else {
+      phEmoji = "🔒"; phText = "鏡頭權限未允許";
+      phSub = "按下面按鈕允許鏡頭權限，或使用系統相機";
+      phBtn.style.display = "inline-block";
+    }
+  } else if (state === "unsupported") {
+    phEmoji = "🚫"; phText = "此瀏覽器不支援網頁鏡頭"; phSub = "請用 Safari／Chrome 開啟，或使用系統相機";
+  } else if (state === "paused") {
+    phText = "鏡頭已暫停"; phSub = "按下面按鈕重新啟動"; phBtn.style.display = "inline-block"; phBtn.textContent = "重新啟動鏡頭";
+  }
+  if (state !== "paused") phBtn.textContent = "允許並啟動鏡頭";
+  $("phEmoji").textContent = phEmoji; $("phText").textContent = phText; $("phSub").textContent = phSub;
+  $("scanPhText").textContent = phText || "掃描鏡頭";
+  $("scanPhSub").textContent = phSub;
+  $("searchPhText").textContent = phText || "搜尋鏡頭";
+  $("searchPhSub").textContent = phSub;
+  $("stageChip").textContent = live ? "📷 對準貨品" : "📷 鏡頭未啟動";
+}
+
+let startingPromise = null;
+function startCamera() {
+  if (stream) return Promise.resolve();
+  if (startingPromise) { dbg("（鏡頭啟動中，忽略重複請求）"); return startingPromise; }
+  startingPromise = doStartCamera().finally(() => { startingPromise = null; });
+  return startingPromise;
+}
+async function doStartCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    dbg("❌ navigator.mediaDevices.getUserMedia 不存在（內置瀏覽器／非 HTTPS）");
+    setCamUI("denied", isLikelyInApp() ? "inapp" : "");
+    return;
+  }
+  setCamUI("starting");
+  // 約束降級階梯：高清 → 只指定前後鏡 → 最寬鬆
+  const ladder = [
+    { desc: "高清 " + facing, opt: { video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false } },
+    { desc: "只指定 " + facing, opt: { video: { facingMode: facing }, audio: false } },
+    { desc: "最寬鬆", opt: { video: true, audio: false } },
+  ];
+  let err = null;
+  for (const step of ladder) {
+    try {
+      dbg("嘗試啟動鏡頭（" + step.desc + "）…");
+      stream = await navigator.mediaDevices.getUserMedia(step.opt);
+      break;
+    } catch (e) {
+      err = e;
+      dbg("✗ 失敗：" + e.name + " — " + e.message);
+      stream = null;
+    }
+  }
+  if (!stream) {
+    camRetries++;
+    dbg("❌ 三種約束全部失敗" + (err ? "（最後錯誤：" + err.name + "）" : ""));
+    setCamUI("denied", (isLikelyInApp() || camRetries >= 2) ? "inapp" : "");
+    return;
+  }
+  const trk = stream.getVideoTracks()[0];
+  let set = {};
+  try { set = trk.getSettings(); } catch {}
+  dbg("✓ 軌道已取得：" + (trk.label || "(無名)") + " | 實際參數 " + JSON.stringify(set) + " | muted=" + trk.muted + " readyState=" + trk.readyState);
+  trk.addEventListener("ended", () => dbg("⚠️ 軌道被系統中止（ended）"));
+  trk.addEventListener("mute", () => dbg("⚠️ 軌道被靜音（可能無畫面）"));
+  trk.addEventListener("unmute", () => dbg("✓ 軌道恢復"));
+  const v = videoFor(activeView);
+  v.srcObject = stream;
+  await v.play().catch((e) => dbg("⚠️ play() 失敗：" + e.name + " " + e.message));
+  setCamUI("live");
+  camRetries = 0;
+  if (activeView === "find") startScanLoop();
+  watchVideo();
+}
+
+/* 黑畫面自動偵測＋重啟（最多 2 次） */
+function watchVideo() {
+  setTimeout(() => {
+    if (camState !== "live" || !stream) return;
+    const v = videoFor(activeView);
+    const t = stream.getVideoTracks()[0];
+    dbg("畫面檢查：videoWidth=" + v.videoWidth + " paused=" + v.paused + " readyState=" + v.readyState + " trackMuted=" + (t ? t.muted : "n/a"));
+    if (!v.videoWidth || v.paused || (t && t.muted)) {
+      dbg("⚠️ 鏡頭已啟動但無影像");
+      if (autoFixTries < 2) {
+        autoFixTries++;
+        dbg("自動重啟鏡頭（第 " + autoFixTries + " 次）…");
+        stopCamera(false);
+        startCamera();
+      } else {
+        dbg("❌ 重試次數已用盡。請：1) 檢查鏡頭權限 2) 關閉其他正在使用鏡頭的應用程式 3) 重新載入頁面");
+        openDebug();
+      }
+    } else {
+      autoFixTries = 0;
+      dbg("✓ 畫面正常（" + v.videoWidth + "x" + v.videoHeight + "）");
+    }
+  }, 3000);
+}
+function stopCamera(pause) {
+  dbg("停止鏡頭" + (pause ? "（暫停）" : ""));
+  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+  VIDEOS.cam.srcObject = null; VIDEOS.scan.srcObject = null;
+  stopScanLoop();
+  setCamUI(pause ? "paused" : "off");
+}
+
+/* ===== 拍照編碼 ===== */
+let currentCode = null, curCount = 0, curImages = [], busy = false;
+
+function renderCodeCard() {
+  const card = $("codeCard");
+  if (!currentCode) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  $("countBadge").textContent = `${curCount}/6 張`;
+  $("countBadge").className = "badge" + (curCount >= 6 ? " full" : "");
+  $("barcodeBox").innerHTML = barcodeSVG(currentCode);
+  $("codeNum").textContent = currentCode;
+  renderInfoLine($("codeInfoLine"), curInfo);
+  const th = $("thumbs"); th.innerHTML = "";
+  curImages.forEach((im) => {
+    const wrap = document.createElement("span");
+    wrap.className = "th";
+    const img = document.createElement("img");
+    img.src = im.url; img.alt = "相 " + im.seq;
+    const del = document.createElement("span");
+    del.className = "del"; del.textContent = "✕";
+    del.title = "刪除此相片";
+    del.onclick = (e) => { e.stopPropagation(); quickDelete(im.key); };
+    wrap.appendChild(img); wrap.appendChild(del);
+    wrap.title = "按一下預覽／刪除";
+    wrap.onclick = () => openViewer(im);
+    th.appendChild(wrap);
+  });
+  for (let i = curCount; i < 6; i++) {
+    const s = document.createElement("div"); s.className = "slot"; s.textContent = i + 1; th.appendChild(s);
+  }
+  $("sameBtn").disabled = curCount >= 6;
+  $("sameBtn").textContent = curCount >= 6 ? "已拍滿 6 張" : `📸 繼續拍同一碼（${curCount}/6）`;
+  $("shootBtn").textContent = shootLabel();
+}
+function shootLabel() {
+  if (multiOn()) return "📸 拍照・批量建立多尺寸";
+  if (curCount >= 6) return "📸 拍照・開新碼";
+  return currentCode ? `📸 拍照・同碼（${curCount}/6）` : "📸 拍照・自動編碼";
+}
+function multiOn() { return $("multiSizeChk").checked; }
+
+async function submitPhoto(blob, code, force) {
+  const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const fd = new FormData();
+  fd.append("file", new File([blob], "cam-" + ts + ".jpg", { type: blob.type || "image/jpeg" }));
+  if (code) fd.append("code", code);
+  if (force) fd.append("force", "1");
+  appendInfoFields(fd);
+  const r = await fetch("/photos", { method: "POST", body: fd });
+  const d = await r.json();
+  if (d.duplicate) { showDup(d.match, blob); return; }
+  if (!r.ok) {
+    toast(d.error || "上傳失敗", "err");
+    if (d.count != null && d.code === currentCode) { curCount = d.count; renderCodeCard(); }
+    return;
+  }
+  currentCode = d.code; curCount = d.count; curImages = d.images;
+  applyServerInfo(d); bindItemCard(d.code);
+  renderCodeCard();
+  toast(`✅ ${d.created ? "新碼" : "同碼"} ${d.code}（${d.count}/6）`);
+  $("codeCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function shoot() {
+  if (busy) return;
+  if (camState !== "live") {
+    if (camState === "denied" || camState === "unsupported") $("cameraInput").click();
+    else startCamera();
+    return;
+  }
+  const v = VIDEOS.cam;
+  if (!v.videoWidth) return toast("鏡頭未準備好", "err");
+  busy = true;
+  $("shootBtn").innerHTML = '<span class="spinner"></span>正在比對資料庫…';
+  const fx = $("flashfx"); fx.classList.remove("on"); void fx.offsetWidth; fx.classList.add("on");
+  const c = document.createElement("canvas");
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext("2d").drawImage(v, 0, 0);
+  const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
+  if (multiOn()) { busy = false; $("shootBtn").innerHTML = shootLabel(); openMultiPanel(blob); return; }
+  try {
+    await submitPhoto(blob, (currentCode && curCount < 6) ? currentCode : null, false);
+  } catch (e) { toast("網絡錯誤：" + e.message, "err"); }
+  busy = false;
+  renderCodeCard();
+}
+
+/* ===== 重複入庫彈窗 ===== */
+let dupBlob = null, dupMatch = null;
+function showDup(match, blob) {
+  dupBlob = blob; dupMatch = match;
+  $("dupSub").textContent = `相似度 ${match.similarity}%・資料庫已有 ${match.count} 張相片` + (match.name ? `・「${match.name}」` : "");
+  if (match.size) { $("dupSize").textContent = "📐 已入庫貨品的尺寸：" + match.size; $("dupSize").style.display = "block"; }
+  else $("dupSize").style.display = "none";
+  $("dupImg").src = match.url;
+  $("dupBarcode").innerHTML = barcodeSVG(match.code);
+  $("dupCode").textContent = match.code;
+  $("dupMask").style.display = "grid";
+}
+$("dupAdd").onclick = async () => {
+  $("dupMask").style.display = "none";
+  if (!dupBlob || !dupMatch) return;
+  busy = true; $("shootBtn").innerHTML = '<span class="spinner"></span>入庫中…';
+  await submitPhoto(dupBlob, dupMatch.code, false).catch((e) => toast("網絡錯誤：" + e.message, "err"));
+  busy = false; renderCodeCard();
+};
+$("dupNew").onclick = async () => {
+  $("dupMask").style.display = "none";
+  if (!dupBlob) return;
+  busy = true; $("shootBtn").innerHTML = '<span class="spinner"></span>開新碼…';
+  await submitPhoto(dupBlob, null, true).catch((e) => toast("網絡錯誤：" + e.message, "err"));
+  busy = false; renderCodeCard();
+};
+$("dupCancel").onclick = () => { $("dupMask").style.display = "none"; toast("已取消，相片未入庫"); };
+
+/* ===== 保存貨品資料 ===== */
+$("saveInfoBtn").onclick = async () => {
+  if (!currentCode) return toast("拍照後才會綁定碼", "err");
+  const btn = $("saveInfoBtn");
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>保存中…';
+  try {
+    const r = await fetch("/codes/" + currentCode, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: $("itemName").value, spec: $("itemSpec").value, price: $("itemPrice").value, size: $("itemSize").value }),
+    });
+    const d = await r.json();
+    if (!r.ok) toast(d.error || "保存失敗", "err");
+    else { applyServerInfo(d); renderCodeCard(); toast("✅ 貨品資料已保存"); }
+  } catch (e) { toast("網絡錯誤：" + e.message, "err"); }
+  btn.disabled = false; btn.innerHTML = "💾 保存貨品資料";
+};
+
+/* ===== 🤖 AI 粗估尺寸（方格紙每格 1cm）===== */
+$("estBtn").onclick = async () => {
+  if (!currentCode || !curImages.length) return toast("請先拍照，再估算尺寸", "err");
+  const btn = $("estBtn");
+  const old = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>估算中…';
+  try {
+    const fd = new FormData();
+    fd.append("code", currentCode);
+    const r = await fetch("/estimate-size", { method: "POST", body: fd });
+    const d = await r.json();
+    if (r.ok && d.ok && d.size) {
+      $("itemSize").value = d.size;
+      toast(`🤖 AI 粗估 ${d.size}（請核對實物）${d.note ? "・" + d.note : ""}`);
+    } else {
+      toast(d.error || "AI 無法估算（請確保相片內有方格紙）", "err");
+    }
+  } catch (e) { toast("網絡錯誤：" + e.message, "err"); }
+  btn.disabled = false; btn.innerHTML = old;
+};
+
+/* ===== 📦 同款多尺寸：拍一次 → 批量建立多個碼 ===== */
+let multiBlob = null, multiResults = [], multiThumbURL = null;
+function multiAddRow(value) {
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex; gap:6px; margin-bottom:6px;";
+  const inp = document.createElement("input");
+  inp.className = "multiSizeInput";
+  inp.placeholder = "尺寸，例如：12 × 8 cm";
+  inp.maxLength = 30;
+  inp.value = value || "";
+  inp.style.cssText = "flex:1; width:auto; min-width:0; border:1px solid #D1D1D6; border-radius:10px; padding:10px 12px; font-size:15px;";
+  inp.addEventListener("input", multiUpdate);
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") $("multiGo").click(); });
+  const del = document.createElement("button");
+  del.type = "button"; del.className = "btn"; del.textContent = "✕";
+  del.style.padding = "10px 13px";
+  del.onclick = () => { row.remove(); multiUpdate(); };
+  row.appendChild(inp); row.appendChild(del);
+  $("multiRows").appendChild(row);
+  multiUpdate();
+  return inp;
+}
+function multiSizes() {
+  return [...document.querySelectorAll("#multiRows .multiSizeInput")].map((i) => i.value.trim()).filter(Boolean);
+}
+function multiUpdate() {
+  const n = multiSizes().length;
+  $("multiGoN").textContent = n;
+  $("multiGo").disabled = n === 0 || !multiBlob;
+}
+function openMultiPanel(blob) {
+  multiBlob = blob;
+  multiResults = [];
+  $("multiResults").innerHTML = "";
+  if (multiThumbURL) URL.revokeObjectURL(multiThumbURL);
+  multiThumbURL = URL.createObjectURL(blob);
+  $("multiThumb").src = multiThumbURL;
+  $("multiRows").innerHTML = "";
+  multiAddRow(""); multiAddRow("");
+  $("multiPanel").style.display = "block";
+  renderCodeCard();
+  $("multiPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  toast("📦 同款多尺寸：輸入每個尺寸後按「建立」");
+  setTimeout(() => { const f = document.querySelector("#multiRows .multiSizeInput"); if (f) f.focus(); }, 350);
+}
+function closeMultiPanel() {
+  $("multiPanel").style.display = "none";
+  multiBlob = null;
+  if (multiThumbURL) { URL.revokeObjectURL(multiThumbURL); multiThumbURL = null; }
+  renderCodeCard();
+}
+$("multiClose").onclick = closeMultiPanel;
+$("multiAddRow").onclick = () => { const inp = multiAddRow(""); inp.focus(); };
+$("multiSizeChk").onchange = () => {
+  if (!multiOn()) closeMultiPanel();
+  else toast("📦 同款多尺寸模式已開啟：拍照後請輸入多個尺寸");
+  renderCodeCard();
+  if (!currentCode) $("shootBtn").textContent = shootLabel();
+};
+$("multiGo").onclick = async () => {
+  const sizes = multiSizes();
+  if (!multiBlob || !sizes.length) return;
+  const btn = $("multiGo");
+  btn.disabled = true;
+  multiResults = [];
+  const resBox = $("multiResults");
+  resBox.innerHTML = "";
+  const nm = $("itemName").value.trim(), sp = $("itemSpec").value.trim(), pr = $("itemPrice").value.trim();
+  const firsts = [];
+  for (let i = 0; i < sizes.length; i++) {
+    btn.innerHTML = `<span class="spinner"></span>建立中（${i + 1}/${sizes.length}）…`;
+    const fd = new FormData();
+    fd.append("file", new File([multiBlob], "multi-" + Date.now() + "-" + (i + 1) + ".jpg", { type: multiBlob.type || "image/jpeg" }));
+    fd.append("force", "1");
+    if (nm) fd.append("name", nm);
+    if (sp) fd.append("spec", sp);
+    if (pr) fd.append("price", pr);
+    fd.append("size", sizes[i]);
+    try {
+      const r = await fetch("/photos", { method: "POST", body: fd });
+      const d = await r.json();
+      if (!r.ok || !d.code) {
+        resBox.insertAdjacentHTML("beforeend", `<div class="empty" style="margin-top:8px;">❌「${esc(sizes[i])}」建立失敗：${esc(d.error || "未知錯誤")}</div>`);
+        continue;
+      }
+      multiResults.push({ code: d.code, size: sizes[i], resp: d });
+      if (!firsts.length) firsts.push(d);
+    } catch (e) {
+      resBox.insertAdjacentHTML("beforeend", `<div class="empty" style="margin-top:8px;">❌ 網絡錯誤：${esc(e.message)}</div>`);
+    }
+  }
+  btn.disabled = false;
+  btn.innerHTML = `✅ 建立 <span id="multiGoN">${sizes.length}</span> 個碼`;
+  if (!multiResults.length) return;
+  const d0 = firsts[0];
+  currentCode = d0.code; curCount = d0.count; curImages = d0.images;
+  applyServerInfo(d0); bindItemCard(d0.code);
+  renderCodeCard();
+  multiResults.forEach((m) => {
+    const item = document.createElement("div");
+    item.style.cssText = "background:#F2F2F7; border-radius:12px; padding:10px 12px; margin-top:8px;";
+    item.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div>
+          <div style="font-size:16px; font-weight:700; letter-spacing:2px;">${m.code}</div>
+          <div class="srTime">📐 ${esc(m.size)}</div>
+        </div>
+        <button class="btn" type="button" style="padding:8px 12px; white-space:nowrap;">切換至此碼</button>
+      </div>
+      <div class="barcodeBox">${barcodeSVG(m.code)}</div>`;
+    item.querySelector("button").onclick = async () => {
+      const g = await fetch("/codes/" + m.code).then((x) => x.json()).catch(() => null);
+      if (!g || g.error) return toast("載入失敗", "err");
+      currentCode = m.code; curCount = g.count; curImages = g.images;
+      applyServerInfo(g);
+      $("itemName").value = g.name || ""; $("itemSpec").value = g.spec || ""; $("itemPrice").value = g.price || ""; $("itemSize").value = g.size || "";
+      bindItemCard(m.code);
+      renderCodeCard();
+      toast("已切換至碼 " + m.code);
+    };
+    resBox.appendChild(item);
+  });
+  resBox.insertAdjacentHTML("afterbegin", `<div class="codeHead" style="margin-top:12px;"><span class="label">✅ 已建立 ${multiResults.length} 個碼（同款・不同尺寸）</span></div>`);
+  toast(`✅ 已建立 ${multiResults.length} 個碼（同款・不同尺寸）`);
+};
+
+/* ===== 相片預覽／刪除 ===== */
+async function refreshAfterDelete(code) {
+  const g = await fetch("/codes/" + code).then((x) => x.json()).catch(() => null);
+  if (g && !g.error) {
+    if (currentCode === code) { curCount = g.count; curImages = g.images; applyServerInfo(g); renderCodeCard(); }
+    if ($("foundCard").dataset.code === code) lookup(code);
+  }
+}
+async function quickDelete(key) {
+  if (!confirm("確定刪除此相片？\n其他相片會保留，刪除後無法復原。")) return;
+  const m = key.match(/^img\/(\d{12})\//);
+  const code = m ? m[1] : null;
+  try {
+    const r = await fetch("/files/" + encodeURIComponent(key), { method: "DELETE" });
+    const d = await r.json();
+    if (!r.ok) return toast(d.error || "刪除失敗", "err");
+    toast("🗑 已刪除 1 張相片（其他相片保留）");
+    if (code) await refreshAfterDelete(code);
+  } catch (e) { toast("網絡錯誤：" + e.message, "err"); }
+}
+let viewerKey = null;
+function openViewer(im) {
+  viewerKey = im.key;
+  const m = im.key.match(/^img\/(\d{12})\//);
+  $("viewerTitle").textContent = m ? "碼 " + m[1] : "相片預覽";
+  $("viewerSub").textContent = "第 " + im.seq + " 張・刪除後無法復原";
+  $("viewerImg").src = im.url;
+  $("imgMask").style.display = "grid";
+}
+$("viewerClose").onclick = () => { $("imgMask").style.display = "none"; viewerKey = null; };
+$("imgMask").onclick = (e) => { if (e.target === $("imgMask")) { $("imgMask").style.display = "none"; viewerKey = null; } };
+$("viewerDel").onclick = async () => {
+  if (!viewerKey) return;
+  const key = viewerKey;
+  $("imgMask").style.display = "none"; viewerKey = null;
+  await quickDelete(key);
+};
+
+$("shootBtn").onclick = shoot;
+$("sameBtn").onclick = () => toast("繼續拍攝，會歸入碼 " + currentCode);
+$("newBtn").onclick = () => {
+  currentCode = null; curCount = 0; curImages = [];
+  curInfo = { name: "", spec: "", price: "", size: "" };
+  clearItemCard();
+  renderCodeCard();
+  $("shootBtn").textContent = shootLabel();
+  toast("✅ 完成！下一件會自動開新碼");
+};
+$("camFlip").onclick = () => { facing = facing === "environment" ? "user" : "environment"; stopCamera(false); startCamera(); };
+$("phBtn").onclick = () => startCamera();
+$("sysCamBtn").onclick = () => $("cameraInput").click();
+$("cameraInput").onchange = async () => {
+  const files = $("cameraInput").files;
+  if (!files.length) return;
+  if (multiOn()) {
+    if (files.length > 1) toast("📦 同款多尺寸模式只會使用第一張相片");
+    openMultiPanel(files[0]);
+    $("cameraInput").value = "";
+    return;
+  }
+  const fd = new FormData();
+  for (const f of files) fd.append("file", f);
+  if (currentCode && curCount < 6) fd.append("code", currentCode);
+  appendInfoFields(fd);
+  try {
+    const r = await fetch("/photos", { method: "POST", body: fd });
+    const d = await r.json();
+    if (d.duplicate && files.length === 1) {
+      showDup(d.match, files[0]);
+    } else if (!r.ok) toast(d.error || "上傳失敗", "err");
+    else {
+      currentCode = d.code; curCount = d.count; curImages = d.images;
+      applyServerInfo(d); bindItemCard(d.code);
+      renderCodeCard();
+      toast(`✅ ${d.created ? "新碼" : "同碼"} ${d.code}（${d.count}/6）`);
+    }
+  } catch (e) { toast("網絡錯誤：" + e.message, "err"); }
+  $("cameraInput").value = "";
+};
+
+/* ===== 智能搜尋：拍照以圖搜碼 ===== */
+$("searchShootBtn").onclick = async () => {
+  if (camState !== "live") { startCamera(); return toast("正在啟動鏡頭…", ""); }
+  const v = VIDEOS.search;
+  if (!v.videoWidth) return toast("鏡頭未準備好", "err");
+  const fx = $("flashfx"); fx.classList.remove("on"); void fx.offsetWidth; fx.classList.add("on");
+  const c = document.createElement("canvas");
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext("2d").drawImage(v, 0, 0);
+  const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
+  const f = new File([blob], "search-" + Date.now() + ".jpg", { type: "image/jpeg" });
+  runSearch({ file: f, btn: $("searchShootBtn") });
+};
+
+/* ===== 條碼掃描（查碼）===== */
+let detector = null, scanTimer = null, lastFound = 0;
+if ("BarcodeDetector" in window) {
+  try { detector = new BarcodeDetector({ formats: ["code_128", "code_39", "ean_13", "ean_8", "qr_code"] }); }
+  catch { try { detector = new BarcodeDetector(); } catch { detector = null; } }
+}
+function startScanLoop() {
+  stopScanLoop();
+  if (!detector) {
+    $("scanHint").textContent = "此瀏覽器不支援自動掃碼，請直接在下面輸入 12 位碼。";
+    return;
+  }
+  const tick = async () => {
+    if (camState !== "live" || activeView !== "find") return;
+    const v = VIDEOS.scan;
+    if (v.readyState >= 2) {
+      try {
+        const codes = await detector.detect(v);
+        for (const c of codes) {
+          const raw = String(c.rawValue || "").trim();
+          const digits = raw.replace(/\D/g, "");
+          if (digits.length === 12) {
+            const now = Date.now();
+            if (now - lastFound > 2500) {
+              lastFound = now;
+              if (navigator.vibrate) navigator.vibrate(80);
+              toast(`📲 已掃到碼 ${digits}`);
+              lookup(digits);
+            }
+            return;
+          } else if (raw) {
+            $("scanHint").textContent = `掃到「${raw}」— 不是 12 位碼，請對準貨品碼。`;
+          }
+        }
+      } catch {}
+    }
+    scanTimer = setTimeout(tick, 250);
+  };
+  tick();
+}
+function stopScanLoop() { if (scanTimer) { clearTimeout(scanTimer); scanTimer = null; } }
+
+/* ===== 查碼結果 ===== */
+let foundInfo = { name: "", spec: "", price: "", size: "" };
+async function lookup(code) {
+  code = String(code).replace(/\D/g, "");
+  if (code.length !== 12) return toast("請輸入 12 位數字碼", "err");
+  $("codeInput").value = code;
+  try {
+    const r = await fetch("/codes/" + code);
+    const d = await r.json();
+    $("foundCard").style.display = "block";
+    if (!r.ok) {
+      $("foundBadge").textContent = "找不到";
+      $("foundBarcode").innerHTML = barcodeSVG(code);
+      $("foundNum").textContent = code;
+      $("foundPhotos").innerHTML = '<div class="empty" style="grid-column:1/-1;">未有相片。</div>';
+      $("foundInfoLine").style.display = "none";
+      foundInfo = { name: "", spec: "", price: "", size: "" };
+      $("foundMeta").textContent = "";
+      $("foundCard").dataset.code = code;
+      return toast(`❌ 找不到碼 ${code}`, "err");
+    }
+    $("foundBadge").textContent = `${d.count}/${d.max} 張`;
+    $("foundBarcode").innerHTML = barcodeSVG(code);
+    $("foundNum").textContent = code;
+    $("foundPhotos").innerHTML = "";
+    d.images.forEach((im) => {
+      const cell = document.createElement("div");
+      cell.className = "phTh";
+      const img = document.createElement("img");
+      img.src = im.url; img.alt = "相 " + im.seq; img.loading = "lazy";
+      const del = document.createElement("span");
+      del.className = "del"; del.textContent = "✕";
+      del.title = "刪除此相片";
+      del.onclick = (e) => { e.stopPropagation(); quickDelete(im.key); };
+      cell.appendChild(img); cell.appendChild(del);
+      cell.title = "按一下預覽";
+      cell.onclick = () => openViewer(im);
+      $("foundPhotos").appendChild(cell);
+    });
+    foundInfo = { name: d.name || "", spec: d.spec || "", price: d.price || "", size: d.size || "" };
+    renderInfoLine($("foundInfoLine"), foundInfo);
+    $("foundMeta").textContent = `建立時間：${fmtTime(d.createdAt)}`;
+    $("foundCard").dataset.code = code;
+    $("foundCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) { toast("網絡錯誤：" + e.message, "err"); }
+}
+$("findBtn").onclick = () => lookup($("codeInput").value);
+$("codeInput").addEventListener("keydown", (e) => { if (e.key === "Enter") lookup($("codeInput").value); });
+$("codeInput").addEventListener("input", () => { $("codeInput").value = $("codeInput").value.replace(/\D/g, ""); });
+$("foundDel").onclick = async () => {
+  const code = $("foundCard").dataset.code;
+  if (!code) return;
+  if (!confirm(`確定刪除碼 ${code} 及其全部相片？`)) return;
+  const r = await fetch("/codes/" + code, { method: "DELETE" });
+  const d = await r.json();
+  if (r.ok) {
+    toast(`🗑 已刪除 ${code}（${d.photos} 張相）`);
+    $("foundCard").style.display = "none";
+    if (currentCode === code) { currentCode = null; curCount = 0; curImages = []; renderCodeCard(); }
+  } else toast(d.error || "刪除失敗", "err");
+};
+$("foundAdd").onclick = () => {
+  const code = $("foundCard").dataset.code;
+  if (!code) return;
+  currentCode = code;
+  fetch("/codes/" + code).then((r) => r.json()).then((d) => {
+    if (d.images) {
+      curCount = d.count; curImages = d.images;
+      applyServerInfo(d);
+      $("itemName").value = d.name || ""; $("itemSpec").value = d.spec || ""; $("itemPrice").value = d.price || ""; $("itemSize").value = d.size || "";
+      bindItemCard(code);
+      renderCodeCard();
+    }
+  });
+  switchView("cam");
+  toast(`📸 現在拍的相片會歸入碼 ${code}`);
+};
+
+/* ===== 編輯現有貨品資料 ===== */
+let editCode = null;
+$("foundEdit").onclick = () => {
+  const code = $("foundCard").dataset.code;
+  if (!code) return;
+  editCode = code;
+  $("infoEditCode").textContent = "碼 " + code;
+  $("editName").value = foundInfo.name;
+  $("editSpec").value = foundInfo.spec;
+  $("editPrice").value = foundInfo.price;
+  $("editSize").value = foundInfo.size;
+  $("infoMask").style.display = "grid";
+  $("editName").focus();
+};
+$("infoCancelBtn").onclick = () => { $("infoMask").style.display = "none"; editCode = null; };
+$("infoMask").onclick = (e) => { if (e.target === $("infoMask")) { $("infoMask").style.display = "none"; editCode = null; } };
+$("infoSaveBtn").onclick = async () => {
+  if (!editCode) return;
+  const btn = $("infoSaveBtn");
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>保存中…';
+  try {
+    const r = await fetch("/codes/" + editCode, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: $("editName").value, spec: $("editSpec").value, price: $("editPrice").value, size: $("editSize").value }),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || "保存失敗", "err"); return; }
+    $("infoMask").style.display = "none";
+    foundInfo = { name: d.name || "", spec: d.spec || "", price: d.price || "", size: d.size || "" };
+    renderInfoLine($("foundInfoLine"), foundInfo);
+    if (currentCode === editCode) {
+      curInfo = { name: d.name || "", spec: d.spec || "", price: d.price || "", size: d.size || "" };
+      $("itemName").value = d.name || ""; $("itemSpec").value = d.spec || ""; $("itemPrice").value = d.price || ""; $("itemSize").value = d.size || "";
+      renderCodeCard();
+    }
+    toast("✅ 貨品資料已更新");
+  } catch (e) { toast("網絡錯誤：" + e.message, "err"); }
+  btn.disabled = false; btn.innerHTML = "💾 保存";
+};
+
+/* ===== 智能搜尋（文字／圖片 → 一維碼）===== */
+function renderSearchResults(d) {
+  const box = $("searchResults");
+  box.innerHTML = "";
+  if (!d.results?.length) {
+    box.innerHTML = '<div class="card"><div class="empty">找不到相符的貨品碼</div></div>';
+    return;
+  }
+  d.results.slice(0, 8).forEach((g) => {
+    const card = document.createElement("div");
+    card.className = "card sresult";
+    card.innerHTML = `
+      <div class="codeHead">
+        ${g.nameMatch ? '<span class="simBadge">✅ 名稱符合</span>' : `<span class="simBadge">相似度 ${g.similarity}%</span>`}
+        <span class="badge">${g.count}/6 張</span>
+      </div>
+      <div class="srRow">
+        ${g.images?.[0] ? `<img src="${g.images[0].url}" alt="">` : ""}
+        <div>
+          <div class="srCode">${g.code}</div>
+          ${(g.name || g.spec || g.price || g.size) ? `<div class="srTime">${g.name ? "<b>" + esc(g.name) + "</b>" : ""}${g.size ? "・📐" + esc(g.size) : ""}${g.spec ? "・" + esc(g.spec) : ""}${g.price ? "・💰" + esc(g.price) : ""}</div>` : ""}
+          <div class="srTime">${fmtTime(g.createdAt)} 建立</div>
+        </div>
+      </div>
+      <div class="barcodeBox">${barcodeSVG(g.code)}</div>
+      <p class="hint">按一下前往查碼頁查看全部相片</p>`;
+    card.onclick = () => { switchView("find"); lookup(g.code); };
+    box.appendChild(card);
+  });
+}
+/* ===== 以圖搜碼結果彈窗 ===== */
+function renderSearchModal(d) {
+  const results = (d.results || []).slice(0, 8);
+  $("searchResSub").textContent = results.length ? "找到 " + results.length + " 個相符貨品" : "";
+  const list = $("searchResList");
+  list.innerHTML = "";
+  if (!results.length) {
+    list.innerHTML = '<div class="empty">找不到相符的貨品碼</div>';
+  } else {
+    results.forEach((g) => {
+      const item = document.createElement("div");
+      item.className = "sresItem";
+      item.innerHTML = `
+        <div class="codeHead">
+          ${g.nameMatch ? '<span class="simBadge">✅ 名稱符合</span>' : `<span class="simBadge">相似度 ${g.similarity}%</span>`}
+          <span class="badge">${g.count}/6 張</span>
+        </div>
+        <div class="barcodeBox" style="margin:10px 0 6px;">${barcodeSVG(g.code)}</div>
+        <div class="srCode" style="text-align:center;">${g.code}</div>
+        <div class="sresName">📛 ${g.name ? "<b>" + esc(g.name) + "</b>" : "（未填名稱）"}</div>
+        ${g.price ? `<div class="sresPrice">💰 ${esc(g.price)}</div>` : ""}
+        ${g.size ? `<div class="sresSpec">📐 ${esc(g.size)}</div>` : ""}
+        ${g.spec ? `<div class="sresSpec">📏 ${esc(g.spec)}</div>` : ""}
+        <div class="srTime" style="text-align:center;">建立於 ${fmtTime(g.createdAt)}・按一下查看該碼全部相片</div>`;
+      item.onclick = () => { $("searchMask").style.display = "none"; switchView("find"); lookup(g.code); };
+      list.appendChild(item);
+    });
+  }
+  $("searchMask").style.display = "grid";
+}
+
+async function runSearch(opts) {
+  const btn = opts.btn, old = btn.innerHTML;
+  const isImage = !!opts.file;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>搜尋中…';
+  if (!isImage) $("searchResults").innerHTML = '<div class="card"><div class="empty">搜尋中…</div></div>';
+  try {
+    let r;
+    if (opts.file) {
+      const fd = new FormData(); fd.append("file", opts.file);
+      r = await fetch("/search", { method: "POST", body: fd });
+    } else {
+      r = await fetch("/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: opts.text }) });
+    }
+    const d = await r.json();
+    if (!r.ok) {
+      if (isImage) toast(d.error || "搜尋失敗", "err");
+      else $("searchResults").innerHTML = `<div class="card"><div class="empty">${d.error || "搜尋失敗"}</div></div>`;
+    } else if (isImage) {
+      renderSearchModal(d);
+    } else {
+      renderSearchResults(d);
+    }
+  } catch (e) {
+    if (isImage) toast("網絡錯誤：" + e.message, "err");
+    else $("searchResults").innerHTML = `<div class="card"><div class="empty">網絡錯誤：${e.message}</div></div>`;
+  }
+  btn.disabled = false; btn.innerHTML = old;
+}
+$("textBtn").onclick = () => {
+  const q = $("textQ").value.trim();
+  if (!q) return toast("請輸入描述文字", "err");
+  runSearch({ text: q, btn: $("textBtn") });
+};
+$("textQ").addEventListener("keydown", (e) => { if (e.key === "Enter") $("textBtn").click(); });
+$("searchResClose").onclick = () => { $("searchMask").style.display = "none"; };
+$("searchMask").onclick = (e) => { if (e.target === $("searchMask")) { $("searchMask").style.display = "none"; } };
+
+/* ===== 分頁切換 ===== */
+function switchView(name) {
+  activeView = name;
+  ["cam", "find", "search"].forEach((n) => {
+    $("view-" + n).classList.toggle("active", n === name);
+    $("nav-" + n).classList.toggle("active", n === name);
+  });
+  if (camState === "live") {
+    stopScanLoop();
+    const v = videoFor(name);
+    v.srcObject = stream;
+    v.play().catch(() => {});
+    if (name === "find") startScanLoop();
+    $("scanStage").classList.toggle("scanning", name === "find");
+  } else if (camState === "off" || camState === "paused") startCamera();
+}
+$("nav-cam").onclick = () => switchView("cam");
+$("nav-find").onclick = () => switchView("find");
+$("nav-search").onclick = () => switchView("search");
+
+/* ===== 省電：頁面隱藏時暫停鏡頭，返回時自動重啟 ===== */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { if (camState === "live") stopCamera(true); }
+  else startCamera();
+});
+
+/* ===== 啟動 ===== */
+(async function diagInit() {
+  dbg("=== 鏡頭診斷開始 ===");
+  dbg("UA: " + navigator.userAgent);
+  dbg("HTTPS: " + window.isSecureContext + " | mediaDevices: " + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) + " | 內置瀏覽器特徵: " + isLikelyInApp());
+  try {
+    const pstat = await navigator.permissions.query({ name: "camera" });
+    dbg("相機權限狀態: " + pstat.state);
+    pstat.onchange = () => dbg("權限變更 → " + pstat.state);
+  } catch { dbg("permissions API 不支援（iOS Safari 正常）"); }
+  try {
+    const ds = await navigator.mediaDevices.enumerateDevices();
+    const cams = ds.filter((d) => d.kind === "videoinput");
+    dbg("鏡頭裝置(" + cams.length + "): " + (cams.map((d) => d.label || "(未授權／未命名)").join(" | ") || "無"));
+  } catch (e) { dbg("enumerateDevices 失敗: " + e.message); }
+})();
+["cam", "scan", "search"].forEach((k) => {
+  const v = VIDEOS[k];
+  v.addEventListener("loadedmetadata", () => dbg("video[" + k + "] 元數據 " + v.videoWidth + "x" + v.videoHeight));
+  v.addEventListener("playing", () => dbg("video[" + k + "] 開始播放"));
+  v.addEventListener("stalled", () => dbg("⚠️ video[" + k + "] stalled（訊號中斷）"));
+  v.addEventListener("error", () => dbg("❌ video[" + k + "] error"));
+});
+setCamUI("starting");
+startCamera();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+</script>
+</body>
+</html>

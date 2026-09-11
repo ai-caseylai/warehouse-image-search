@@ -1,0 +1,33 @@
+{
+  "name": "大家庭集團貨品條碼庫",
+  "short_name": "大家庭條碼庫",
+  "description": "拍照自動編碼、掃碼搵相、文字／圖片搜碼 — 千問視覺向量 + Cloudflare Vectorize",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "zh-Hant",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
