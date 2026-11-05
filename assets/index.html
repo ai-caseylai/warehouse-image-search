@@ -888,17 +888,22 @@ function measureOverlay() {
   if (!measure) return;
   measureDrawOnly();
   const { res, box } = measure;
+  const gridBad = !res.gridOk ||
+    (!res.homographyUsed && res.confidence === "low") ||
+    (res.gridCheck && (res.gridCheck.rmsPx > 10 || res.gridCheck.maxCellErrPct > 15));
   const wCm = res.localX ? box.w / res.localX : 0;
   const dCm = res.localY ? box.h / res.localY : 0;
-  $("measureW").value = wCm ? wCm.toFixed(2) : "";
-  $("measureD").value = dCm ? dCm.toFixed(2) : "";
+  $("measureW").value = gridBad ? "" : (wCm ? wCm.toFixed(2) : "");
+  $("measureD").value = gridBad ? "" : (dCm ? dCm.toFixed(2) : "");
   const conf = res.confidence === "high" ? "高" : res.confidence === "medium" ? "中" : "低";
   const grid = res.localX && res.localY ? `格距 ${res.localX.toFixed(1)} × ${res.localY.toFixed(1)} px/cm` : "格線未偵測到";
   const gc = res.gridCheck ? `格點 ${res.gridCheck.nx}×${res.gridCheck.ny}・RMS ${res.gridCheck.rmsPx}px・格邊誤差 ${res.gridCheck.maxCellErrPct}%` : "格點校正未完成";
-  $("measureInfo").textContent = `${grid} ・ ${gc} ・ CV 信心：${conf} ・ ${res.note}`;
+  $("measureInfo").textContent = gridBad
+    ? `⛔ 格點校正失敗（${gc}）・請重拍（唔會顯示 cm）；可按 AI 估算或人手輸入`
+    : `${grid} ・ ${gc} ・ CV 信心：${conf} ・ ${res.note}`;
   const ai = $("measureAI");
-  ai.className = "btn" + (res.confidence === "low" ? " primary" : "");
-  ai.textContent = res.confidence === "low" ? "🤖 AI 估算（建議）" : "🤖 AI 估算（備用）";
+  ai.className = "btn" + (res.confidence === "low" || gridBad ? " primary" : "");
+  ai.textContent = res.confidence === "low" || gridBad ? "🤖 AI 估算（建議）" : "🤖 AI 估算（備用）";
 }
 
 function measureStartDrag(e, mode) {
