@@ -9,7 +9,8 @@
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; }
+  html { height: 100%; }
+  body { min-height: 100%; }
   body {
     font-family: -apple-system, "PingFang HK", "PingFang TC", "Microsoft JhengHei", sans-serif;
     background: #F4F5F7; color: #1C1C1E;
@@ -81,7 +82,7 @@
   /* ===== 貨品資料表格 ===== */
   .field { margin-bottom: 8px; }
   .field label { display: block; font-size: 12px; color: #8E8E93; margin-bottom: 3px; }
-  .field input { width: 100%; border: 1px solid #D1D1D6; border-radius: 10px; padding: 10px 12px; font-size: 15px; background: #fff; color: #1C1C1E; }
+  .field input { width: 100%; border: 1px solid #D1D1D6; border-radius: 10px; padding: 10px 12px; font-size: 16px; background: #fff; color: #1C1C1E; }
   .infoLine { font-size: 13px; color: #1C1C1E; margin-top: 8px; line-height: 1.6; }
   .infoLine .price { color: #D93025; font-weight: 700; }
   .viewerCard.dupCard img { width: 100%; max-height: 350px; object-fit: contain; background: #000; border-radius: 12px; border: 0; margin-top: 6px; }
@@ -131,6 +132,17 @@
   .dupCard img { width: 120px; height: 120px; object-fit: cover; border-radius: 12px; border: 2px solid #FF9500; }
   .dupCard .codeNum { font-size: 18px; letter-spacing: 3px; }
   .dupCard .row { margin-top: 14px; }
+  /* 方格量度 */
+  .measureCard { max-width: 440px; }
+  .measureWrap { position: relative; margin: 8px 0 10px; background:#000; border-radius:10px; overflow:hidden; touch-action:none; }
+  #measureCanvas { display:block; width:100%; height:auto; max-height:52vh; }
+  .measureBox { position:absolute; border:2px solid #34C759; box-shadow:0 0 0 1px rgba(0,0,0,.5), 0 0 0 9999px rgba(0,0,0,.18); cursor:move; }
+  .measureBox .mh { position:absolute; width:20px; height:20px; background:#34C759; border:2px solid #fff; border-radius:50%; touch-action:none; }
+  .measureBox .mh.nw { left:-11px; top:-11px; cursor:nwse-resize; }
+  .measureBox .mh.ne { right:-11px; top:-11px; cursor:nesw-resize; }
+  .measureBox .mh.sw { left:-11px; bottom:-11px; cursor:nesw-resize; }
+  .measureBox .mh.se { right:-11px; bottom:-11px; cursor:nwse-resize; }
+  .measureBox .mh::after { content:""; position:absolute; inset:5px; border-radius:50%; background:#fff; opacity:.7; }
 
   /* ===== 底部導航 ===== */
   nav {
@@ -188,10 +200,10 @@
       <div class="field"><label for="itemSpec">規格</label><input id="itemSpec" maxlength="60" placeholder="例如：尺碼 XL／棉質／200g"></div>
       <div class="field"><label for="itemPrice">價錢</label><input id="itemPrice" inputmode="decimal" maxlength="20" placeholder="例如：99 或 99.5"></div>
       <div class="field" style="margin-bottom:2px;">
-        <label for="itemSize">尺寸（闊 × 高）</label>
+        <label for="itemSize">尺寸（闊 × 深）</label>
         <div style="display:flex; gap:8px;">
-          <input id="itemSize" maxlength="30" placeholder="例如：12 × 8 cm" style="flex:1; width:auto; min-width:0;">
-          <button class="btn" id="estBtn" type="button" style="padding:10px 12px; white-space:nowrap;">🤖 AI 粗估</button>
+          <input id="itemSize" maxlength="30" placeholder="例如：3.2 × 2.8 cm" style="flex:1; width:auto; min-width:0;">
+          <button class="btn" id="estBtn" type="button" style="padding:10px 12px; white-space:nowrap;">📐 量度</button>
         </div>
       </div>
       <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; background:#F2F2F7; border-radius:10px; padding:10px 12px; margin-bottom:6px;">
@@ -200,7 +212,7 @@
       </div>
       <p class="hint" style="margin-top:0;">開啟後：拍一次相，即可一次過建立多個碼——適合外貌一樣但尺寸不同的貨物（名稱／規格／價錢共用，尺寸逐個輸入）。</p>
       <button class="btn primary big" id="saveInfoBtn" style="display:none; margin-top:8px;">💾 保存貨品資料</button>
-      <p class="hint">可以先填寫資料再拍照，資料會自動綁定新碼。把貨品放在方格紙（每格 1cm）上拍照後，可按「🤖 AI 粗估」自動估算尺寸——屬輔助參考，誤差約 ±30%，請以實物量度為準。</p>
+      <p class="hint">可以先填寫資料再拍照，資料會自動綁定新碼。把貨品放在方格紙（每格 1cm）上俯拍後，可按「📐 量度」用格線自動量闊 × 深（足印）；高度請自行量度。不規則或反光件可用 AI 估算做備用參考。</p>
     </div>
 
     <button class="btn primary big" id="shootBtn" style="margin-top:10px;">📸 拍照・自動編碼</button>
@@ -366,10 +378,44 @@
     <div class="field" style="text-align:left;"><label for="editName">貨物名稱</label><input id="editName" maxlength="60" placeholder="例如：藍色圓領 T 恤"></div>
     <div class="field" style="text-align:left;"><label for="editSpec">規格</label><input id="editSpec" maxlength="60" placeholder="例如：尺碼 XL／棉質"></div>
     <div class="field" style="text-align:left;"><label for="editPrice">價錢</label><input id="editPrice" inputmode="decimal" maxlength="20" placeholder="例如：99 或 99.5"></div>
-    <div class="field" style="text-align:left; margin-bottom:2px;"><label for="editSize">尺寸（闊 × 高）</label><input id="editSize" maxlength="30" placeholder="例如：12 × 8 cm"></div>
+    <div class="field" style="text-align:left; margin-bottom:2px;"><label for="editSize">尺寸（闊 × 深）</label><input id="editSize" maxlength="30" placeholder="例如：3.2 × 2.8 cm"></div>
     <div class="row">
       <button class="btn primary" id="infoSaveBtn">💾 保存</button>
       <button class="btn" id="infoCancelBtn">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 方格量度（CV 主量度 + AI fallback） -->
+<div class="mask" id="measureMask" style="display:none;">
+  <div class="dupCard measureCard">
+    <h2>📐 量度尺寸（W × D）</h2>
+    <div class="sub" id="measureMsg">載入相片中…</div>
+    <div class="measureWrap" id="measureWrap">
+      <canvas id="measureCanvas"></canvas>
+      <div class="measureBox" id="measureBox">
+        <span class="mh nw" data-h="nw"></span><span class="mh ne" data-h="ne"></span>
+        <span class="mh sw" data-h="sw"></span><span class="mh se" data-h="se"></span>
+      </div>
+    </div>
+    <div class="row" style="align-items:flex-end;">
+      <div class="field" style="flex:1; margin-bottom:0; text-align:left;">
+        <label for="measureW">W 闊（cm）</label>
+        <input id="measureW" inputmode="decimal" maxlength="8">
+      </div>
+      <div class="field" style="flex:1; margin-bottom:0; text-align:left;">
+        <label for="measureD">D 深（cm）</label>
+        <input id="measureD" inputmode="decimal" maxlength="8">
+      </div>
+    </div>
+    <p class="meta" id="measureInfo" style="text-align:left; min-height:32px;"></p>
+    <div class="row">
+      <button class="btn" id="measureReset" type="button">↺ 重設自動框</button>
+      <button class="btn" id="measureAI" type="button">🤖 AI 估算（備用）</button>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="measureSave" type="button">✅ 確認尺寸</button>
+      <button class="btn" id="measureCancel" type="button">取消</button>
     </div>
   </div>
 </div>
@@ -395,6 +441,7 @@
 <div class="toast" id="toast"></div>
 <div id="flashfx"></div>
 
+<script src="/measure.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let toastTimer;
@@ -706,6 +753,43 @@ async function submitPhoto(blob, code, force) {
   $("codeCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
+/* 影相／選相都先縮圖：上傳 1024px、搜尋 512px。
+   免費 Jina key 每分鐘 100k tokens；1920×1080 一張要 ~48k，
+   縮到 1024 約 16k、512 約 4k，避免 demo 時 429。 */
+function captureCanvas(video, maxDim) {
+  const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(video.videoWidth * scale));
+  c.height = Math.max(1, Math.round(video.videoHeight * scale));
+  c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
+  return c;
+}
+async function compressImageFile(file, maxDim = 1024, quality = 0.85) {
+  if (!file || !file.type || !file.type.startsWith("image/")) return file;
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+    if (scale >= 1 && file.size <= 1.5 * 1024 * 1024) return file;
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", quality));
+    if (!blob) return file;
+    return new File([blob], (file.name || "photo").replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    return file;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 async function shoot() {
   if (busy) return;
   if (camState !== "live") {
@@ -718,9 +802,7 @@ async function shoot() {
   busy = true;
   $("shootBtn").innerHTML = '<span class="spinner"></span>正在比對資料庫…';
   const fx = $("flashfx"); fx.classList.remove("on"); void fx.offsetWidth; fx.classList.add("on");
-  const c = document.createElement("canvas");
-  c.width = v.videoWidth; c.height = v.videoHeight;
-  c.getContext("2d").drawImage(v, 0, 0);
+  const c = captureCanvas(v, 1024);
   const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
   if (multiOn()) { busy = false; $("shootBtn").innerHTML = shootLabel(); openMultiPanel(blob); return; }
   try {
@@ -776,25 +858,195 @@ $("saveInfoBtn").onclick = async () => {
   btn.disabled = false; btn.innerHTML = "💾 保存貨品資料";
 };
 
-/* ===== 🤖 AI 粗估尺寸（方格紙每格 1cm）===== */
-$("estBtn").onclick = async () => {
-  if (!currentCode || !curImages.length) return toast("請先拍照，再估算尺寸", "err");
-  const btn = $("estBtn");
-  const old = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>估算中…';
+/* ===== 📐 方格量度（CV 主量度 + AI fallback）=====
+   俯拍 + 1cm 方格：CV 量 W × D（足印）；H 由人手量。
+   AI 只在用戶按「AI 估算」時才 call，作低信心 fallback。 */
+let measure = null;
+
+function measureClose() {
+  $("measureMask").style.display = "none";
+  measure = null;
+}
+
+function measureDrawOnly() {
+  if (!measure) return;
+  const { box, imgW, imgH } = measure;
+  const canvas = $("measureCanvas");
+  const rect = canvas.getBoundingClientRect();
+  const sx = rect.width / imgW, sy = rect.height / imgH;
+  measure.scaleX = sx; measure.scaleY = sy;
+  const el = $("measureBox");
+  el.style.left = (box.x * sx) + "px";
+  el.style.top = (box.y * sy) + "px";
+  el.style.width = Math.max(10, box.w * sx) + "px";
+  el.style.height = Math.max(10, box.h * sy) + "px";
+}
+
+function measureOverlay() {
+  if (!measure) return;
+  measureDrawOnly();
+  const { res, box } = measure;
+  const wCm = res.localX ? box.w / res.localX : 0;
+  const dCm = res.localY ? box.h / res.localY : 0;
+  $("measureW").value = wCm ? wCm.toFixed(2) : "";
+  $("measureD").value = dCm ? dCm.toFixed(2) : "";
+  const conf = res.confidence === "high" ? "高" : res.confidence === "medium" ? "中" : "低";
+  const grid = res.localX && res.localY ? `格距 ${res.localX.toFixed(1)} × ${res.localY.toFixed(1)} px/cm` : "格線未偵測到";
+  $("measureInfo").textContent = `${grid} ・ CV 信心：${conf} ・ ${res.note}`;
+  const ai = $("measureAI");
+  ai.className = "btn" + (res.confidence === "low" ? " primary" : "");
+  ai.textContent = res.confidence === "low" ? "🤖 AI 估算（建議）" : "🤖 AI 估算（備用）";
+}
+
+function measureStartDrag(e, mode) {
+  if (!measure) return;
+  e.preventDefault(); e.stopPropagation();
+  const startX = e.clientX, startY = e.clientY;
+  const b = { ...measure.box };
+  const move = (ev) => {
+    const dx = (ev.clientX - startX) / (measure.scaleX || 1);
+    const dy = (ev.clientY - startY) / (measure.scaleY || 1);
+    let { x, y, w, h } = b;
+    if (mode === "move") { x += dx; y += dy; }
+    else {
+      if (mode.includes("w")) { x += dx; w -= dx; }
+      if (mode.includes("e")) { w += dx; }
+      if (mode.includes("n")) { y += dy; h -= dy; }
+      if (mode.includes("s")) { h += dy; }
+    }
+    const min = 12;
+    if (w < min) { if (mode.includes("w")) x -= (min - w); w = min; }
+    if (h < min) { if (mode.includes("n")) y -= (min - h); h = min; }
+    x = Math.max(0, Math.min(measure.imgW - w, x));
+    y = Math.max(0, Math.min(measure.imgH - h, y));
+    w = Math.min(w, measure.imgW - x);
+    h = Math.min(h, measure.imgH - y);
+    measure.box = { x, y, w, h };
+    measureOverlay();
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
+}
+
+function measureLoad(img) {
+  const MAX = (window.GridMeasure && GridMeasure.MAX_SIDE) || 1200;
+  const sc = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+  const W = Math.round(img.naturalWidth * sc), H = Math.round(img.naturalHeight * sc);
+  const canvas = $("measureCanvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, W, H);
+  const data = ctx.getImageData(0, 0, W, H);
+  let res;
+  try { res = GridMeasure.analyze(data.data, W, H); }
+  catch (e) {
+    res = {
+      box: { x: Math.round(W * 0.25), y: Math.round(H * 0.25), w: Math.round(W * 0.5), h: Math.round(H * 0.5) },
+      localX: 0, localY: 0, confidence: "low", note: "CV 失敗，請人手拉框或用 AI", vx: [], vy: [],
+    };
+  }
+  measure = { imgW: W, imgH: H, res, box: { ...res.box }, autoBox: { ...res.box }, scaleX: 1, scaleY: 1 };
+  $("measureMsg").textContent = "自動框只作起點；可拖動／拉角修正，或按 AI 估算。";
+  $("measureBox").style.display = "block";
+  requestAnimationFrame(() => measureOverlay());
+}
+
+$("estBtn").onclick = () => {
+  if (!currentCode || !curImages.length) return toast("請先拍照，再量度尺寸", "err");
+  if (!window.GridMeasure) return toast("量度模組載入失敗，請重新載入", "err");
+  const im = curImages[curImages.length - 1];
+  $("measureMask").style.display = "grid";
+  $("measureMsg").textContent = "載入相片中…";
+  $("measureBox").style.display = "none";
+  const img = new Image();
+  img.onload = () => measureLoad(img);
+  img.onerror = () => toast("相片載入失敗", "err");
+  img.src = im.url;
+};
+$("measureBox").addEventListener("pointerdown", (e) => {
+  const h = e.target.closest(".mh");
+  measureStartDrag(e, h ? h.dataset.h : "move");
+});
+$("measureReset").onclick = () => {
+  if (!measure) return;
+  measure.box = { ...measure.autoBox };
+  measureOverlay();
+};
+$("measureW").addEventListener("change", () => {
+  if (!measure || !measure.res.localX) return;
+  const v = parseFloat($("measureW").value);
+  if (v > 0) { measure.box.w = Math.min(measure.imgW, v * measure.res.localX); measureDrawOnly(); }
+});
+$("measureD").addEventListener("change", () => {
+  if (!measure || !measure.res.localY) return;
+  const v = parseFloat($("measureD").value);
+  if (v > 0) { measure.box.h = Math.min(measure.imgH, v * measure.res.localY); measureDrawOnly(); }
+});
+$("measureCancel").onclick = measureClose;
+$("measureMask").onclick = (e) => { if (e.target === $("measureMask")) measureClose(); };
+window.addEventListener("resize", () => { if (measure) measureOverlay(); });
+
+$("measureAI").onclick = async () => {
+  if (!measure || !currentCode) return;
+  const btn = $("measureAI"), old = btn.textContent;
+  btn.disabled = true; btn.textContent = "AI 估算中…";
   try {
     const fd = new FormData();
     fd.append("code", currentCode);
     const r = await fetch("/estimate-size", { method: "POST", body: fd });
     const d = await r.json();
-    if (r.ok && d.ok && d.size) {
-      $("itemSize").value = d.size;
-      toast(`🤖 AI 粗估 ${d.size}（請核對實物）${d.note ? "・" + d.note : ""}`);
+    if (r.ok && d.ok && Number(d.width_cm) > 0 && Number(d.height_cm) > 0) {
+      // 俯拍：AI 嘅 width/height 當作足印 W/D
+      $("measureW").value = Number(d.width_cm).toFixed(2);
+      $("measureD").value = Number(d.height_cm).toFixed(2);
+      if (measure.res.localX && measure.res.localY) {
+        measure.box = {
+          x: measure.box.x, y: measure.box.y,
+          w: Math.min(measure.imgW, Number(d.width_cm) * measure.res.localX),
+          h: Math.min(measure.imgH, Number(d.height_cm) * measure.res.localY),
+        };
+        measureDrawOnly();
+      }
+      $("measureInfo").textContent = `🤖 AI 估算 W ${Number(d.width_cm).toFixed(2)} × D ${Number(d.height_cm).toFixed(2)} cm（信心 ${d.confidence || "?"}；僅參考，請人手確認）${d.note ? "・" + d.note : ""}`;
+      toast("🤖 AI 估算已填入，請核對");
     } else {
       toast(d.error || "AI 無法估算（請確保相片內有方格紙）", "err");
     }
   } catch (e) { toast("網絡錯誤：" + e.message, "err"); }
-  btn.disabled = false; btn.innerHTML = old;
+  btn.disabled = false; btn.textContent = old;
+};
+
+$("measureSave").onclick = async () => {
+  if (!measure || !currentCode) return;
+  const w = parseFloat($("measureW").value), d = parseFloat($("measureD").value);
+  if (!(w > 0 && d > 0)) return toast("請輸入有效的 W / D", "err");
+  const fmt = (v) => String(Number(v.toFixed(2)));
+  const size = `${fmt(w)} × ${fmt(d)} cm`;
+  const btn = $("measureSave");
+  btn.disabled = true; btn.textContent = "保存中…";
+  try {
+    const r = await fetch("/codes/" + currentCode, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ size }),
+    });
+    const j = await r.json();
+    if (!r.ok) toast(j.error || "保存失敗", "err");
+    else {
+      $("itemSize").value = j.size || size;
+      applyServerInfo(j);
+      renderCodeCard();
+      measureClose();
+      toast("✅ 尺寸已保存：" + ($("itemSize").value || size));
+    }
+  } catch (e) { toast("網絡錯誤：" + e.message, "err"); }
+  btn.disabled = false; btn.textContent = "✅ 確認尺寸";
 };
 
 /* ===== 📦 同款多尺寸：拍一次 → 批量建立多個碼 ===== */
@@ -979,19 +1231,21 @@ $("cameraInput").onchange = async () => {
   if (!files.length) return;
   if (multiOn()) {
     if (files.length > 1) toast("📦 同款多尺寸模式只會使用第一張相片");
-    openMultiPanel(files[0]);
+    openMultiPanel(await compressImageFile(files[0], 1024));
     $("cameraInput").value = "";
     return;
   }
+  const compressed = [];
+  for (const f of files) compressed.push(await compressImageFile(f, 1024));
   const fd = new FormData();
-  for (const f of files) fd.append("file", f);
+  for (const f of compressed) fd.append("file", f);
   if (currentCode && curCount < 6) fd.append("code", currentCode);
   appendInfoFields(fd);
   try {
     const r = await fetch("/photos", { method: "POST", body: fd });
     const d = await r.json();
-    if (d.duplicate && files.length === 1) {
-      showDup(d.match, files[0]);
+    if (d.duplicate && compressed.length === 1) {
+      showDup(d.match, compressed[0]);
     } else if (!r.ok) toast(d.error || "上傳失敗", "err");
     else {
       currentCode = d.code; curCount = d.count; curImages = d.images;
@@ -1009,10 +1263,8 @@ $("searchShootBtn").onclick = async () => {
   const v = VIDEOS.search;
   if (!v.videoWidth) return toast("鏡頭未準備好", "err");
   const fx = $("flashfx"); fx.classList.remove("on"); void fx.offsetWidth; fx.classList.add("on");
-  const c = document.createElement("canvas");
-  c.width = v.videoWidth; c.height = v.videoHeight;
-  c.getContext("2d").drawImage(v, 0, 0);
-  const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
+  const c = captureCanvas(v, 512);
+  const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.9));
   const f = new File([blob], "search-" + Date.now() + ".jpg", { type: "image/jpeg" });
   runSearch({ file: f, btn: $("searchShootBtn") });
 };
@@ -1164,16 +1416,19 @@ $("infoSaveBtn").onclick = async () => {
       body: JSON.stringify({ name: $("editName").value, spec: $("editSpec").value, price: $("editPrice").value, size: $("editSize").value }),
     });
     const d = await r.json();
-    if (!r.ok) { toast(d.error || "保存失敗", "err"); return; }
-    $("infoMask").style.display = "none";
-    foundInfo = { name: d.name || "", spec: d.spec || "", price: d.price || "", size: d.size || "" };
-    renderInfoLine($("foundInfoLine"), foundInfo);
-    if (currentCode === editCode) {
-      curInfo = { name: d.name || "", spec: d.spec || "", price: d.price || "", size: d.size || "" };
-      $("itemName").value = d.name || ""; $("itemSpec").value = d.spec || ""; $("itemPrice").value = d.price || ""; $("itemSize").value = d.size || "";
-      renderCodeCard();
+    if (!r.ok) {
+      toast(d.error || "保存失敗", "err");
+    } else {
+      $("infoMask").style.display = "none";
+      foundInfo = { name: d.name || "", spec: d.spec || "", price: d.price || "", size: d.size || "" };
+      renderInfoLine($("foundInfoLine"), foundInfo);
+      if (currentCode === editCode) {
+        curInfo = { name: d.name || "", spec: d.spec || "", price: d.price || "", size: d.size || "" };
+        $("itemName").value = d.name || ""; $("itemSpec").value = d.spec || ""; $("itemPrice").value = d.price || ""; $("itemSize").value = d.size || "";
+        renderCodeCard();
+      }
+      toast("✅ 貨品資料已更新");
     }
-    toast("✅ 貨品資料已更新");
   } catch (e) { toast("網絡錯誤：" + e.message, "err"); }
   btn.disabled = false; btn.innerHTML = "💾 保存";
 };

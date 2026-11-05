@@ -31,8 +31,41 @@ function checkAuth(env, req, url) {
   return token === env.AUTH_TOKEN;
 }
 
-/* ===== 千問多模態向量 ===== */
+/* ===== 多模態向量：DashScope（正式）或 Jina CLIP v2（免費 demo）===== */
+const JINA_EMBED_API = "https://api.jina.ai/v1/embeddings";
+
+function useJina(env) {
+  if (env.EMBED_PROVIDER === "jina") return true;
+  if (env.EMBED_PROVIDER === "dashscope") return false;
+  return Boolean(env.JINA_API_KEY) && !env.DASHSCOPE_API_KEY;
+}
+
+async function embedJina(env, content) {
+  const input = content.image ? { image: content.image } : { text: String(content.text || "") };
+  const body = {
+    model: env.JINA_MODEL || "jina-clip-v2",
+    input: [input],
+  };
+  const dims = Number(env.EMBED_DIMENSIONS);
+  if (dims) body.dimensions = dims;
+  const res = await fetch(JINA_EMBED_API, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.JINA_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const d = await res.json().catch(() => ({}));
+  const vec = d.data?.[0]?.embedding;
+  if (!res.ok || !Array.isArray(vec) || !vec.length) {
+    throw new Error(d.detail || d.message || `Jina embedding error (${res.status})`);
+  }
+  return vec;
+}
+
 async function embed(env, content) {
+  if (useJina(env)) return embedJina(env, content);
   const res = await fetch(EMBED_API, {
     method: "POST",
     headers: {
@@ -60,6 +93,69 @@ async function toDataURI(bytes, type) {
 }
 const vecIdOf = (key) => key.replace(/\.[^.]+$/, "");
 
+/* ===== 儲存層：R2（正式）或 KV（免費 demo）=====
+   wrangler.jsonc 用 r2_buckets（R2 需要付款方式）；
+   wrangler.free.jsonc 用 kv_namespaces（Free plan 唔使卡）。
+   以下 adapter 令其餘 code 唔需要理會係邊種。 */
+function isKVStore(env) {
+  return !env.IMAGES?.head && typeof env.IMAGES?.getWithMetadata === "function";
+}
+function storage(env) {
+  const kv = isKVStore(env);
+  const B = env.IMAGES;
+  return {
+    kv,
+    async head(key) {
+      if (!kv) return B.head(key);
+      const r = await B.getWithMetadata(key, { type: "arrayBuffer" });
+      if (!r || r.value == null) return null;
+      return { key, size: r.value.byteLength, metadata: r.metadata || {} };
+    },
+    async get(key) {
+      if (!kv) return B.get(key);
+      const r = await B.getWithMetadata(key, { type: "arrayBuffer" });
+      if (!r || r.value == null) return null;
+      const buf = r.value;
+      return {
+        key,
+        body: buf,
+        httpMetadata: { contentType: r.metadata?.contentType || "application/octet-stream" },
+        customMetadata: r.metadata || {},
+        async text() { return new TextDecoder().decode(buf); },
+        async arrayBuffer() { return buf; },
+      };
+    },
+    async put(key, value, opts = {}) {
+      if (!kv) return B.put(key, value, opts);
+      const metadata = {
+        ...(opts.customMetadata || {}),
+        size: typeof value === "string" ? new TextEncoder().encode(value).length : (value.byteLength ?? value.length),
+      };
+      if (opts.httpMetadata?.contentType) metadata.contentType = opts.httpMetadata.contentType;
+      return B.put(key, value, { metadata });
+    },
+    async delete(keys) {
+      if (!kv) return B.delete(keys);
+      const list = Array.isArray(keys) ? keys : [keys];
+      await Promise.all(list.map((k) => B.delete(k)));
+    },
+    async list({ prefix = "", cursor, limit = 500 } = {}) {
+      if (!kv) return B.list({ prefix, cursor, limit });
+      const r = await B.list({ prefix, cursor, limit });
+      return {
+        objects: (r.keys || []).map((k) => ({
+          key: k.name,
+          size: k.metadata?.size || 0,
+          uploaded: k.metadata?.uploadedAt || null,
+          metadata: k.metadata || {},
+        })),
+        truncated: !r.list_complete,
+        cursor: r.list_complete ? undefined : r.cursor,
+      };
+    },
+  };
+}
+
 /* ===== 12 位獨一無二碼：YYMMDDHHMMSS（碰撞自動順延）===== */
 function baseCode(now = new Date()) {
   const p = (n) => String(n).padStart(2, "0");
@@ -69,14 +165,15 @@ function baseCode(now = new Date()) {
   );
 }
 async function newUniqueCode(env) {
+  const s = storage(env);
   for (let i = 0; i < 600; i++) {
     const code = baseCode(new Date(Date.now() + i * 1000));
-    if (!(await env.IMAGES.head(`codes/${code}.json`))) return code;
+    if (!(await s.head(`codes/${code}.json`))) return code;
   }
   throw new Error("無法生成唯一碼，請稍後再試");
 }
 async function getReg(env, code) {
-  const obj = await env.IMAGES.get(`codes/${code}.json`);
+  const obj = await storage(env).get(`codes/${code}.json`);
   if (!obj) return null;
   try { return JSON.parse(await obj.text()); } catch { return null; }
 }
@@ -90,7 +187,7 @@ function regActiveImages(reg) {
   return activeImages(reg).map((im) => ({ ...im, url: `/files/${im.key}` }));
 }
 async function saveReg(env, reg) {
-  await env.IMAGES.put(`codes/${reg.code}.json`, JSON.stringify(reg), {
+  await storage(env).put(`codes/${reg.code}.json`, JSON.stringify(reg), {
     httpMetadata: { contentType: "application/json" },
   });
 }
@@ -98,16 +195,17 @@ function cleanField(v, max = 60) {
   return String(v ?? "").trim().slice(0, max);
 }
 async function loadAllRegs(env) {
+  const s = storage(env);
   const entries = [];
   let cursor;
   do {
-    const page = await env.IMAGES.list({ prefix: "codes/", cursor, limit: 500 });
+    const page = await s.list({ prefix: "codes/", cursor, limit: 500 });
     entries.push(...page.objects);
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
   const regs = await Promise.all(
     entries.map(async (o) => {
-      try { return JSON.parse(await (await env.IMAGES.get(o.key)).text()); } catch { return null; }
+      try { return JSON.parse(await (await s.get(o.key)).text()); } catch { return null; }
     }),
   );
   return regs.filter(Boolean);
@@ -134,6 +232,8 @@ async function handlePhotos(req, env) {
     price: cleanField(fd.get("price"), 20),
     size: cleanField(fd.get("size"), 30),
   };
+  const s = storage(env);
+  const warnings = [];
 
   // 讀取所有相片
   const items = [];
@@ -147,11 +247,12 @@ async function handlePhotos(req, env) {
   const valid = items.filter((it) => it.bytes);
   if (!valid.length) return jsonResp({ error: items[0]?.error || "沒有有效相片" }, 400);
 
-  // 重複入庫偵測（只在開新碼時執行）
+  // 重複入庫偵測（只在開新碼時執行）。保留第一個向量，入庫時重用，避免 embed 兩次。
+  let firstVec = null;
   if (!code && !force) {
     try {
-      const qv = await embed(env, { image: await toDataURI(valid[0].bytes, valid[0].type) });
-      const res = await env.VECTOR_INDEX.query(qv, { topK: 3, returnMetadata: true });
+      firstVec = await embed(env, { image: await toDataURI(valid[0].bytes, valid[0].type) });
+      const res = await env.VECTOR_INDEX.query(firstVec, { topK: 3, returnMetadata: true });
       let hit = null;
       for (const m of res.matches) {
         if (!m.metadata?.code || m.score < dupThreshold) continue;
@@ -208,29 +309,44 @@ async function handlePhotos(req, env) {
 
   // 入庫：R2 + 向量
   const added = [];
-  for (const it of valid) {
+  for (let idx = 0; idx < valid.length; idx++) {
+    const it = valid[idx];
     const ext = EXT[it.type] || ".jpg";
     let seq = reg.images.reduce((mx, im) => Math.max(mx, im.seq || 0), 0) + 1;
     let key = `img/${code}/${seq}${ext}`;
     while (reg.images.some((im) => im.key === key)) { seq++; key = `img/${code}/${seq}${ext}`; }
     const uploadedAt = new Date().toISOString();
-    await env.IMAGES.put(key, it.bytes, {
+    await s.put(key, it.bytes, {
       httpMetadata: { contentType: it.type },
       customMetadata: { code, seq: String(seq), uploadedAt },
     });
-    try {
-      const values = await embed(env, { image: await toDataURI(it.bytes, it.type) });
-      await env.VECTOR_INDEX.upsert([
-        { id: vecIdOf(key), values, metadata: { code, key, seq, uploadedAt: Date.now() } },
-      ]);
-    } catch (e) {
-      console.warn("embed failed for", key, String(e.message || e));
+    // 第一張相如果查重時已經 embed 過，直接重用
+    let values = (idx === 0 && firstVec) ? firstVec : null;
+    if (!values) {
+      try {
+        values = await embed(env, { image: await toDataURI(it.bytes, it.type) });
+      } catch (e) {
+        const msg = String(e.message || e);
+        console.warn("embed failed for", key, msg);
+        warnings.push({ stage: "embed", key, error: msg });
+      }
+    }
+    if (values) {
+      try {
+        await env.VECTOR_INDEX.upsert([
+          { id: vecIdOf(key), values, metadata: { code, key, seq, uploadedAt: Date.now() } },
+        ]);
+      } catch (e) {
+        const msg = String(e.message || e);
+        console.warn("vector upsert failed for", key, msg);
+        warnings.push({ stage: "upsert", key, error: msg });
+      }
     }
     reg.images.push({ key, seq, type: it.type, size: it.bytes.length, uploadedAt });
     added.push({ key, seq, url: `/files/${key}` });
   }
 
-  await env.IMAGES.put(`codes/${code}.json`, JSON.stringify(reg), {
+  await s.put(`codes/${code}.json`, JSON.stringify(reg), {
     httpMetadata: { contentType: "application/json" },
   });
 
@@ -247,6 +363,7 @@ async function handlePhotos(req, env) {
     spec: reg.spec || "",
     price: reg.price || "",
     size: reg.size || "",
+    ...(warnings.length ? { warnings } : {}),
   });
 }
 
@@ -338,10 +455,11 @@ async function handleSearch(req, env, url) {
 
 /* ===== 舊版相容路由（供未更新到新版介面的裝置過渡）===== */
 async function handleListLegacy(env) {
+  const s = storage(env);
   const entries = [];
   let cursor;
   do {
-    const page = await env.IMAGES.list({ cursor, limit: 500 });
+    const page = await s.list({ cursor, limit: 500 });
     entries.push(...page.objects);
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
@@ -400,7 +518,7 @@ async function handleDeleteCode(env, code, url) {
   if (!reg) return jsonResp({ error: `找不到碼 ${code}`, code }, 404);
   if (url.searchParams.get("hard") === "1") {
     const keys = reg.images.map((im) => im.key);
-    await env.IMAGES.delete([`codes/${code}.json`, ...keys]);
+    await storage(env).delete([`codes/${code}.json`, ...keys]);
     await env.VECTOR_INDEX.deleteByIds(keys.map(vecIdOf)).catch(() => {});
     return jsonResp({ deleted: code, photos: keys.length, hard: true });
   }
@@ -431,7 +549,7 @@ async function handlePatchCode(req, env, code) {
   if (typeof body.price === "string") reg.price = cleanField(body.price, 20);
   if (typeof body.size === "string") reg.size = cleanField(body.size, 30);
   reg.updatedAt = new Date().toISOString();
-  await env.IMAGES.put(`codes/${code}.json`, JSON.stringify(reg), {
+  await storage(env).put(`codes/${code}.json`, JSON.stringify(reg), {
     httpMetadata: { contentType: "application/json" },
   });
   return jsonResp({ ok: true, code, name: reg.name || "", spec: reg.spec || "", price: reg.price || "", size: reg.size || "" });
@@ -442,13 +560,38 @@ async function handlePatchCode(req, env, code) {
 const VISION_API =
   "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
 
+function dataURIBytes(dataURI) {
+  const i = dataURI.indexOf(",");
+  const b64 = i >= 0 ? dataURI.slice(i + 1) : dataURI;
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let j = 0; j < bin.length; j++) out[j] = bin.charCodeAt(j);
+  return out;
+}
+
+async function visionWorkersAI(env, dataURI, prompt) {
+  const bytes = dataURIBytes(dataURI);
+  if (bytes.length > 2 * 1024 * 1024) {
+    throw new Error("相片太大（Workers AI 免費版建議先壓縮至 2MB 以下）");
+  }
+  const model = env.WORKERS_AI_VISION_MODEL || "@cf/llava-hf/llava-1.5-7b-hf";
+  const out = await env.AI.run(model, {
+    image: [...bytes],
+    prompt,
+    max_tokens: 220,
+  });
+  const raw = out?.response ?? out?.description ?? out?.text ?? out;
+  if (Array.isArray(raw)) return raw.map((x) => x?.text || x?.response || "").join("");
+  return String(raw ?? "");
+}
+
 async function dataURIFromCode(env, code) {
   const reg = await getReg(env, code);
   if (!reg || reg.deletedAt) return { error: `找不到碼 ${code}`, status: 404 };
   const act = activeImages(reg);
   if (!act.length) return { error: "此碼沒有相片可估算", status: 400 };
   const im = act[act.length - 1];
-  const obj = await env.IMAGES.get(im.key);
+  const obj = await storage(env).get(im.key);
   if (!obj) return { error: "相片檔案遺失", status: 404 };
   return { dataURI: await toDataURI(new Uint8Array(await obj.arrayBuffer()), im.type || "image/jpeg") };
 }
@@ -491,24 +634,33 @@ async function handleEstimateSize(req, env, url) {
     '如果看不到方格紙或無法估算，回覆 {"width_cm":0,"height_cm":0,"confidence":"low","note":"看不到方格紙"}',
   ].join("\n");
 
-  const res = await fetch(VISION_API, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.DASHSCOPE_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: env.VISION_MODEL || "qwen-vl-max",
-      input: { messages: [{ role: "user", content: [{ image: dataURI }, { text: prompt }] }] },
-      parameters: { result_format: "message" },
-    }),
-  });
-  const d = await res.json().catch(() => ({}));
-  if (!res.ok || d.code) {
-    return jsonResp({ error: d.message || `Vision API 錯誤（${res.status}）` }, 502);
+  let content;
+  if (env.VISION_PROVIDER !== "dashscope" && env.AI) {
+    try {
+      content = await visionWorkersAI(env, dataURI, prompt);
+    } catch (e) {
+      return jsonResp({ error: String(e.message || e) }, 502);
+    }
+  } else {
+    const res = await fetch(VISION_API, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${env.DASHSCOPE_API_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: env.VISION_MODEL || "qwen-vl-max",
+        input: { messages: [{ role: "user", content: [{ image: dataURI }, { text: prompt }] }] },
+        parameters: { result_format: "message" },
+      }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.code) {
+      return jsonResp({ error: d.message || `Vision API 錯誤（${res.status}）` }, 502);
+    }
+    content = d.output?.choices?.[0]?.message?.content ?? d.output?.text;
+    if (Array.isArray(content)) content = content.map((c) => c.text || "").join("");
   }
-  let content = d.output?.choices?.[0]?.message?.content ?? d.output?.text;
-  if (Array.isArray(content)) content = content.map((c) => c.text || "").join("");
   content = String(content || "").trim();
   const jm = content.match(/\{[\s\S]*\}/);
   if (!jm) return jsonResp({ error: "AI 回覆無法識別", raw: content }, 502);
@@ -582,7 +734,7 @@ export default {
         const m2 = key.match(/^img\/(\d{12})\//);
         const reg2 = m2 ? await getReg(env, m2[1]) : null;
         if (url.searchParams.get("hard") === "1") {
-          await env.IMAGES.delete(key);
+          await storage(env).delete(key);
           await env.VECTOR_INDEX.deleteByIds([vecIdOf(key)]).catch(() => {});
           if (reg2) {
             reg2.images = reg2.images.filter((im) => im.key !== key);
@@ -598,7 +750,7 @@ export default {
         }
         return jsonResp({ deleted: key, soft: true, restore: `POST /files/${encodeURIComponent(key)}/restore` });
       }
-      const obj = await env.IMAGES.get(key);
+      const obj = await storage(env).get(key);
       if (!obj) return new Response("Not found", { status: 404 });
       return new Response(obj.body, {
         headers: {
@@ -637,10 +789,16 @@ export default {
       if (m && req.method === "DELETE") return await handleDeleteCode(env, m[1], url);
       if (m && req.method === "PATCH") return await handlePatchCode(req, env, m[1]);
       if (p === "/health") {
+        const jina = useJina(env);
+        const kv = isKVStore(env);
         return jsonResp({
           ok: true,
           app: "大家庭集團貨品條碼庫",
-          model: env.EMBED_MODEL || "tongyi-embedding-vision-flash",
+          storage: kv ? "kv" : "r2",
+          embedProvider: jina ? "jina" : "dashscope",
+          model: jina ? (env.JINA_MODEL || "jina-clip-v2") : (env.EMBED_MODEL || "tongyi-embedding-vision-flash"),
+          embedDimensions: jina ? (Number(env.EMBED_DIMENSIONS) || null) : null,
+          visionProvider: (env.VISION_PROVIDER !== "dashscope" && env.AI) ? "workers-ai" : "dashscope",
           maxPerCode: MAX_PER_CODE,
           dupThreshold: Number(env.DUP_THRESHOLD) || 0.85,
           auth: Boolean(env.AUTH_TOKEN),
