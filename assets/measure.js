@@ -108,6 +108,84 @@
     return take.length ? take.reduce((s, x) => s + x.d, 0) / take.length : 0;
   }
 
+  const GRID_CM = 1;
+
+  function solve8(A, b) {
+    const n = 8;
+    for (let i = 0; i < n; i++) {
+      let p = i;
+      for (let r = i + 1; r < n; r++) if (Math.abs(A[r][i]) > Math.abs(A[p][i])) p = r;
+      if (Math.abs(A[p][i]) < 1e-10) return null;
+      if (p !== i) { const t = A[i]; A[i] = A[p]; A[p] = t; const tb = b[i]; b[i] = b[p]; b[p] = tb; }
+      const d = A[i][i];
+      for (let c = i; c < n; c++) A[i][c] /= d;
+      b[i] /= d;
+      for (let r = 0; r < n; r++) {
+        if (r === i) continue;
+        const f = A[r][i];
+        if (!f) continue;
+        for (let c = i; c < n; c++) A[r][c] -= f * A[i][c];
+        b[r] -= f * b[i];
+      }
+    }
+    return b.slice();
+  }
+
+  function fitGridHomography(vx, vy) {
+    const nx = vx.length, ny = vy.length;
+    if (nx < 4 || ny < 4) return null;
+    const x0 = vx[0], x1 = vx[nx - 1], y0 = vy[0], y1 = vy[ny - 1];
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const sx = (x1 - x0) / 2 || 1, sy = (y1 - y0) / 2 || 1;
+    const cu = (nx - 1) / 2, cv = (ny - 1) / 2;
+    const su = (nx - 1) / 2 || 1, sv = (ny - 1) / 2 || 1;
+    const ATA = Array.from({ length: 8 }, () => Array(8).fill(0));
+    const ATb = Array(8).fill(0);
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      const xn = (vx[i] - cx) / sx, yn = (vy[j] - cy) / sy;
+      const un = (i - cu) / su, vn = (j - cv) / sv;
+      const rows = [
+        [xn, yn, 1, 0, 0, 0, -un * xn, -un * yn, un],
+        [0, 0, 0, xn, yn, 1, -vn * xn, -vn * yn, vn],
+      ];
+      for (const row of rows) {
+        for (let a = 0; a < 8; a++) {
+          for (let b = 0; b < 8; b++) ATA[a][b] += row[a] * row[b];
+          ATb[a] += row[a] * row[8];
+        }
+      }
+    }
+    const h = solve8(ATA, ATb);
+    if (!h) return null;
+    const map = (x, y) => {
+      const xn = (x - cx) / sx, yn = (y - cy) / sy;
+      const den = h[6] * xn + h[7] * yn + 1;
+      if (Math.abs(den) < 1e-9) return null;
+      const un = (h[0] * xn + h[1] * yn + h[2]) / den;
+      const vn = (h[3] * xn + h[4] * yn + h[5]) / den;
+      return { u: un * su + cu, v: vn * sv + cv };
+    };
+    let sum = 0, count = 0;
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      const p = map(vx[i], vy[j]);
+      if (!p) continue;
+      const du = p.u - i, dv = p.v - j;
+      sum += du * du + dv * dv; count++;
+    }
+    const rmsCell = Math.sqrt(sum / Math.max(1, count));
+    let maxCellErr = 0;
+    for (let i = 0; i + 1 < nx; i++) for (let j = 0; j < ny; j++) {
+      const a = map(vx[i], vy[j]), b = map(vx[i + 1], vy[j]);
+      if (a && b) maxCellErr = Math.max(maxCellErr, Math.abs(Math.hypot(b.u - a.u, b.v - a.v) - 1));
+    }
+    for (let i = 0; i < nx; i++) for (let j = 0; j + 1 < ny; j++) {
+      const a = map(vx[i], vy[j]), b = map(vx[i], vy[j + 1]);
+      if (a && b) maxCellErr = Math.max(maxCellErr, Math.abs(Math.hypot(b.u - a.u, b.v - a.v) - 1));
+    }
+    const avgPeriod = (((vx[nx - 1] - vx[0]) / (nx - 1)) + ((vy[ny - 1] - vy[0]) / (ny - 1))) / 2;
+    return { map, rmsCell, rmsPx: rmsCell * avgPeriod, maxCellErr, nx, ny, avgPeriod };
+  }
+
   function maxFilter(src, W, H, r) {
     const tmp = new Uint8Array(W * H), out = new Uint8Array(W * H);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -155,6 +233,8 @@
     const rawVx = peaks(scoreX, Math.max(20, Math.round(periodX * 0.35)));
     const rawVy = peaks(scoreY, Math.max(20, Math.round(periodY * 0.35)));
     const vx = regularize(rawVx, periodX), vy = regularize(rawVy, periodY);
+    // 動態網格標定：格線交點 → homography（image ↔ 格座標）
+    const GH = fitGridHomography(vx, vy);
 
     const isGrid = new Uint8Array(N);
     for (const x of rawVx) for (let y = 0; y < H; y++) for (let k = -3; k <= 3; k++) { const xx = x + k; if (xx >= 0 && xx < W) isGrid[y * W + xx] = 1; }
@@ -245,18 +325,47 @@
       const bw = Math.round(W * 0.3), bh = Math.round(H * 0.3);
       box = { x: Math.round((W - bw) / 2), y: Math.round((H - bh) / 2), w: bw, h: bh, cx: W / 2, cy: H / 2 };
     }
-    const lx = localPeriod(vx, box.cx, periodX) || periodX;
-    const ly = localPeriod(vy, box.cy, periodY) || periodY;
-    const wCm = lx ? box.w / lx : 0;
-    const dCm = ly ? box.h / ly : 0;
+    // Local homography around the object (paper is not perfectly flat)
+    const vxNear = vx.filter((x) => Math.abs(x - box.cx) <= periodX * 3.5);
+    const vyNear = vy.filter((y) => Math.abs(y - box.cy) <= periodY * 3.5);
+    const GHl = fitGridHomography(vxNear, vyNear);
+    const GHuse = GHl && (!GH || GHl.rmsCell <= GH.rmsCell * 1.1) ? GHl : GH;
+    const gridCalibOk = Boolean(GHuse && GHuse.rmsCell < 0.06 && GHuse.maxCellErr < 0.12);
+    let lx = localPeriod(vx, box.cx, periodX) || periodX;
+    let ly = localPeriod(vy, box.cy, periodY) || periodY;
+    let wCm = lx ? box.w / lx : 0;
+    let dCm = ly ? box.h / ly : 0;
+    let homographyUsed = false;
+    if (GHuse) {
+      const corners = [
+        { x: box.x, y: box.y }, { x: box.x + box.w, y: box.y },
+        { x: box.x + box.w, y: box.y + box.h }, { x: box.x, y: box.y + box.h },
+      ];
+      const cms = corners.map((c) => GHuse.map(c.x, c.y));
+      if (cms.every(Boolean)) {
+        const top = Math.hypot(cms[1].u - cms[0].u, cms[1].v - cms[0].v);
+        const bottom = Math.hypot(cms[2].u - cms[3].u, cms[2].v - cms[3].v);
+        const left = Math.hypot(cms[3].u - cms[0].u, cms[3].v - cms[0].v);
+        const right = Math.hypot(cms[2].u - cms[1].u, cms[2].v - cms[1].v);
+        wCm = ((top + bottom) / 2) * GRID_CM;
+        dCm = ((left + right) / 2) * GRID_CM;
+        homographyUsed = true;
+        lx = wCm ? box.w / wCm : lx;
+        ly = dCm ? box.h / dCm : ly;
+      }
+    }
+    if (!homographyUsed) { wCm = lx ? box.w / lx : 0; dCm = ly ? box.h / ly : 0; }
     const skew = lx && ly && periodX && periodY ? Math.max(lx / periodX, ly / periodY, periodX / lx, periodY / ly) : 1;
     let confidence = "high";
     if (!gridOk || !obj || spacingSkew > 1.12) confidence = "low";
-    else if (skew > 1.12 || obj.area < N * 0.004 || box.w < periodX * 1.0 || box.h < periodY * 1.0 || grownFlag) confidence = "medium";
+    else if (!homographyUsed || !gridCalibOk || skew > 1.12 || obj.area < N * 0.004 || box.w < periodX * 1.0 || box.h < periodY * 1.0 || grownFlag) confidence = "medium";
+    if (GHuse && GHuse.rmsCell > 0.10) confidence = "low";
     const note = !gridOk
       ? (spacingSkew > 1.12
         ? "格距 X/Y 差 " + Math.round((spacingSkew - 1) * 100) + "%，影像太斜／格線不清，請重拍"
         : "格線偵測失敗，請重拍或用 AI")
+      : GHuse && !gridCalibOk
+        ? "格點校正誤差大（RMS " + GHuse.rmsPx.toFixed(1) + "px），請重拍"
       : !obj ? "搵唔到物件，請人手拉框或用 AI"
       : grownFlag ? "反光件已合併附近邊緣，請確認框位"
       : skew > 1.12 ? "透視/近大遠小偏差較大，請確認"
@@ -266,7 +375,8 @@
       box: { x: box.x, y: box.y, w: box.w, h: box.h },
       wCm: +wCm.toFixed(2), dCm: +dCm.toFixed(2),
       confidence, note,
-      gridOk, objectOk: !!obj,
+      gridOk, objectOk: !!obj, homographyUsed,
+      gridCheck: GHuse ? { nx: GHuse.nx, ny: GHuse.ny, rmsPx: +GHuse.rmsPx.toFixed(1), maxCellErrPct: +(GHuse.maxCellErr * 100).toFixed(1) } : null,
       vx, vy,
     };
   }

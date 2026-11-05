@@ -894,7 +894,8 @@ function measureOverlay() {
   $("measureD").value = dCm ? dCm.toFixed(2) : "";
   const conf = res.confidence === "high" ? "高" : res.confidence === "medium" ? "中" : "低";
   const grid = res.localX && res.localY ? `格距 ${res.localX.toFixed(1)} × ${res.localY.toFixed(1)} px/cm` : "格線未偵測到";
-  $("measureInfo").textContent = `${grid} ・ CV 信心：${conf} ・ ${res.note}`;
+  const gc = res.gridCheck ? `格點 ${res.gridCheck.nx}×${res.gridCheck.ny}・RMS ${res.gridCheck.rmsPx}px・格邊誤差 ${res.gridCheck.maxCellErrPct}%` : "格點校正未完成";
+  $("measureInfo").textContent = `${grid} ・ ${gc} ・ CV 信心：${conf} ・ ${res.note}`;
   const ai = $("measureAI");
   ai.className = "btn" + (res.confidence === "low" ? " primary" : "");
   ai.textContent = res.confidence === "low" ? "🤖 AI 估算（建議）" : "🤖 AI 估算（備用）";
