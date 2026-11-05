@@ -140,12 +140,11 @@
     const scoreX = lineScore("x", W, H, gray), scoreY = lineScore("y", W, H, gray);
     let periodX = autocorrPeriod(scoreX, 45, 130);
     let periodY = autocorrPeriod(scoreY, 45, 130);
-    if (periodX && periodY && Math.abs(periodX - periodY) / Math.max(periodX, periodY) > 0.22) {
-      periodX = periodY = Math.max(periodX, periodY);
-    }
+    const rawPX = periodX, rawPY = periodY;
     if (!periodX) periodX = periodY;
     if (!periodY) periodY = periodX;
-    const gridOk = periodX >= 45 && periodX <= 130 && periodY >= 45 && periodY <= 130;
+    const spacingSkew = rawPX && rawPY ? Math.max(rawPX / rawPY, rawPY / rawPX) : 99;
+    const gridOk = rawPX >= 45 && rawPX <= 130 && rawPY >= 45 && rawPY <= 130 && spacingSkew <= 1.12;
 
     const rawVx = peaks(scoreX, Math.max(20, Math.round(periodX * 0.35)));
     const rawVy = peaks(scoreY, Math.max(20, Math.round(periodY * 0.35)));
@@ -183,10 +182,11 @@
       const i0 = sy * W + sx;
       if (!fg[i0] || label[i0] !== -1) continue;
       let head = 0, tail = 0; qx[tail] = sx; qy[tail] = sy; tail++; label[i0] = next;
-      let area = 0, minx = sx, maxx = sx, miny = sy, maxy = sy, sumx = 0, sumy = 0;
+      let area = 0, minx = sx, maxx = sx, miny = sy, maxy = sy, sumx = 0, sumy = 0, edge = 0;
       while (head < tail) {
         const x = qx[head], y = qy[head]; head++;
         area++; sumx += x; sumy += y;
+        if (grad[y * W + x] > 40) edge++;
         if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
         const nb = [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]];
         for (const [nx, ny] of nb) {
@@ -195,7 +195,7 @@
           if (fg[ni] && label[ni] === -1) { label[ni] = next; qx[tail] = nx; qy[tail] = ny; tail++; }
         }
       }
-      comps.push({ id: next, area, minx, maxx, miny, maxy, cx: sumx / area, cy: sumy / area });
+      comps.push({ id: next, area, minx, maxx, miny, maxy, cx: sumx / area, cy: sumy / area, edge, density: edge / area });
       next++;
     }
     comps.sort((a, b) => b.area - a.area);
@@ -217,46 +217,24 @@
     let box = null;
     let grownFlag = false;
     if (obj) {
+      // Metal/reflective items break into several edge components (threads, hex body).
+      // Merge nearby *edge-dense* components only; skip smooth shadows/paper noise.
+      let minx = obj.minx, maxx = obj.maxx, miny = obj.miny, maxy = obj.maxy;
       const bw0 = obj.maxx - obj.minx + 1, bh0 = obj.maxy - obj.miny + 1;
-      // Narrow strip + bright metal: grow through weak edges (hysteresis) to capture the full object.
-      if (bw0 / bh0 < 0.6) {
-        const weak = new Uint8Array(N);
-        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-          const i = y * W + x;
-          if (isGrid[i]) continue;
-          const delta = Math.max(Math.abs(R[i] - pr), Math.abs(G[i] - pg), Math.abs(B[i] - pb));
-          if (grad[i] > 24 || gray[i] < 105 || delta > 26) weak[i] = 1;
-        }
-        const ex0 = Math.max(x0, obj.minx - Math.round(bw0 * 0.4));
-        const ex1 = Math.min(x1 - 1, obj.maxx + Math.round(bw0 * 2.2));
-        const ey0 = Math.max(y0, obj.miny - Math.round(bh0 * 0.2));
-        const ey1 = Math.min(y1 - 1, obj.maxy + Math.round(bh0 * 0.2));
-        const grown = new Uint8Array(N);
-        const qx2 = new Int32Array(N), qy2 = new Int32Array(N);
-        let head = 0, tail = 0;
-        for (let y = obj.miny; y <= obj.maxy; y++) for (let x = obj.minx; x <= obj.maxx; x++) {
-          const i = y * W + x;
-          if (label[i] === obj.id) { grown[i] = 1; qx2[tail] = x; qy2[tail] = y; tail++; }
-        }
-        while (head < tail) {
-          const x = qx2[head], y = qy2[head]; head++;
-          for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
-            if (nx < ex0 || nx > ex1 || ny < ey0 || ny > ey1) continue;
-            const ni = ny * W + nx;
-            if (!grown[ni] && (weak[ni] || fg[ni])) { grown[ni] = 1; qx2[tail] = nx; qy2[tail] = ny; tail++; }
-          }
-        }
-        let minx = obj.minx, maxx = obj.maxx, miny = obj.miny, maxy = obj.maxy;
-        for (let y = ey0; y <= ey1; y++) for (let x = ex0; x <= ex1; x++) {
-          if (!grown[y * W + x]) continue;
-          if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
-        }
-        if (maxx - minx + 1 > bw0 * 1.15) {
-          grownFlag = true;
-          box = { x: minx, y: miny, w: maxx - minx + 1, h: maxy - miny + 1, cx: (minx + maxx) / 2, cy: (miny + maxy) / 2 };
-        }
+      const radius = Math.max(bw0, bh0) * 0.9;
+      for (const c of comps) {
+        if (c === obj) continue;
+        if (c.area < Math.max(150, obj.area * 0.05)) continue;
+        if ((c.density || 0) < 0.08 || (c.edge || 0) < 60) continue;
+        if (c.cx < obj.cx - radius || c.cx > obj.cx + radius || c.cy < obj.cy - radius || c.cy > obj.cy + radius) continue;
+        if (c.minx < x0 || c.maxx > x1 || c.miny < y0 || c.maxy > y1) continue;
+        const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
+        if (cw > W * 0.45 || ch > H * 0.45) continue;
+        minx = Math.min(minx, c.minx); maxx = Math.max(maxx, c.maxx);
+        miny = Math.min(miny, c.miny); maxy = Math.max(maxy, c.maxy);
       }
-      if (!box) box = { x: obj.minx, y: obj.miny, w: obj.maxx - obj.minx + 1, h: obj.maxy - obj.miny + 1, cx: obj.cx, cy: obj.cy };
+      if ((maxx - minx + 1) > bw0 * 1.12 || (maxy - miny + 1) > bh0 * 1.12) grownFlag = true;
+      box = { x: minx, y: miny, w: maxx - minx + 1, h: maxy - miny + 1, cx: (minx + maxx) / 2, cy: (miny + maxy) / 2 };
     } else {
       const bw = Math.round(W * 0.3), bh = Math.round(H * 0.3);
       box = { x: Math.round((W - bw) / 2), y: Math.round((H - bh) / 2), w: bw, h: bh, cx: W / 2, cy: H / 2 };
@@ -267,12 +245,14 @@
     const dCm = ly ? box.h / ly : 0;
     const skew = lx && ly && periodX && periodY ? Math.max(lx / periodX, ly / periodY, periodX / lx, periodY / ly) : 1;
     let confidence = "high";
-    if (!gridOk || !obj) confidence = "low";
+    if (!gridOk || !obj || spacingSkew > 1.12) confidence = "low";
     else if (skew > 1.12 || obj.area < N * 0.004 || box.w < periodX * 1.0 || box.h < periodY * 1.0 || grownFlag) confidence = "medium";
-    if (obj && box.w / box.h < 0.6) confidence = "low";
-    const note = !gridOk ? "格線偵測失敗，請人手拉框或用 AI"
+    const note = !gridOk
+      ? (spacingSkew > 1.12
+        ? "格距 X/Y 差 " + Math.round((spacingSkew - 1) * 100) + "%，影像太斜／格線不清，請重拍"
+        : "格線偵測失敗，請重拍或用 AI")
       : !obj ? "搵唔到物件，請人手拉框或用 AI"
-      : grownFlag ? "亮面/反光件已自動擴展框，請確認"
+      : grownFlag ? "反光件已合併附近邊緣，請確認框位"
       : skew > 1.12 ? "透視/近大遠小偏差較大，請確認"
       : "自動框只作起點，請人手確認";
     return {
