@@ -120,6 +120,8 @@
   .sresItem { padding: 12px 4px 10px; border-bottom: 1px solid #F2F2F7; cursor: pointer; border-radius: 8px; }
   .sresItem:last-child { border-bottom: 0; }
   .sresItem:active { background: #F0F6FF; }
+  .sresImgs { display: flex; gap: 6px; justify-content: center; margin: 8px 0 6px; }
+  .sresImgs img { width: 76px; height: 76px; object-fit: cover; border-radius: 8px; border: 1px solid #E5E5EA; background: #000; }
   .sresName { font-size: 15px; margin-top: 6px; text-align: center; }
   .sresPrice { font-size: 15px; font-weight: 700; color: #1E8E3E; text-align: center; margin-top: 3px; }
   .sresSpec { font-size: 12px; color: #666; text-align: center; margin-top: 3px; }
@@ -1480,6 +1482,7 @@ function renderSearchModal(d) {
           ${g.nameMatch ? '<span class="simBadge">✅ 名稱符合</span>' : `<span class="simBadge">相似度 ${g.similarity}%</span>`}
           <span class="badge">${g.count}/6 張</span>
         </div>
+        ${(g.images || []).length ? `<div class="sresImgs">${g.images.slice(0, 3).map((im) => `<img src="${esc(im.url)}" alt="" loading="lazy">`).join("")}</div>` : ""}
         <div class="barcodeBox" style="margin:10px 0 6px;">${barcodeSVG(g.code)}</div>
         <div class="srCode" style="text-align:center;">${g.code}</div>
         <div class="sresName">📛 ${g.name ? "<b>" + esc(g.name) + "</b>" : "（未填名稱）"}</div>
