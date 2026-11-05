@@ -93,12 +93,18 @@
     return best.length >= 3 ? best : p;
   }
 
-  function localPeriod(p, center) {
+  function localPeriod(p, center, globalPeriod) {
     if (p.length < 2) return 0;
     const ints = [];
-    for (let i = 0; i + 1 < p.length; i++) ints.push({ d: p[i + 1] - p[i], mid: (p[i] + p[i + 1]) / 2 });
+    for (let i = 0; i + 1 < p.length; i++) {
+      const d = p[i + 1] - p[i];
+      if (d <= 20) continue;
+      // Reject gaps caused by missing/false lines; they are not one grid cell.
+      if (globalPeriod && (d < globalPeriod * 0.7 || d > globalPeriod * 1.3)) continue;
+      ints.push({ d, mid: (p[i] + p[i + 1]) / 2 });
+    }
     ints.sort((a, b) => Math.abs(a.mid - center) - Math.abs(b.mid - center));
-    const take = ints.slice(0, 2).filter((x) => x.d > 20);
+    const take = ints.slice(0, 2);
     return take.length ? take.reduce((s, x) => s + x.d, 0) / take.length : 0;
   }
 
@@ -239,8 +245,8 @@
       const bw = Math.round(W * 0.3), bh = Math.round(H * 0.3);
       box = { x: Math.round((W - bw) / 2), y: Math.round((H - bh) / 2), w: bw, h: bh, cx: W / 2, cy: H / 2 };
     }
-    const lx = localPeriod(vx, box.cx) || periodX;
-    const ly = localPeriod(vy, box.cy) || periodY;
+    const lx = localPeriod(vx, box.cx, periodX) || periodX;
+    const ly = localPeriod(vy, box.cy, periodY) || periodY;
     const wCm = lx ? box.w / lx : 0;
     const dCm = ly ? box.h / ly : 0;
     const skew = lx && ly && periodX && periodY ? Math.max(lx / periodX, ly / periodY, periodX / lx, periodY / ly) : 1;
