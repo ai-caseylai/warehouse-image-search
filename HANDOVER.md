@@ -35,7 +35,7 @@
 
 - GitHub：https://github.com/ai-caseylai/warehouse-image-search（public）
 - Branch：`main`
-- 最新 commit：`2d18207`（動態網格標定 + 校正失敗唔顯示 cm）
+- 最新 commit：`15df3fa`（長條物件唔亂合併 + 手動 1cm 格線校準）
 - 相關 commits：
   - `cd5318e` 動態網格 homography
   - `1e5b905` 以圖搜碼結果顯示相片
@@ -76,7 +76,9 @@ Cloudflare Worker (src/index.js)
 - 方格量度：
   - 動態格線交點 + 局部 homography（物件附近 ±3.5 格）
   - 格點自檢：RMS px、格邊誤差 %
-  - 校正失敗（RMS >10px 或格邊誤差 >15%）→ 清空 W/D，要求重拍
+  - 嚴重校正失敗（X/Y 差 >1.6 或無物件／比例）→ 清空 W/D，要求重拍或手動校準；其他誤差顯示數值＋警告
+  - **手動 1cm 校準**：格紙太波浪／自動偵測失敗時，按「📏 校準 1cm」點兩條相鄰格線，唔需要鋼尺
+  - 長條物件（螺絲/pin）唔會合併附近陰影／紙邊
   - 只量 **W × D（足印）**；H 未做
 - 樣本結果：
   - 5cm × 1.5cm pin：**1.71 × 4.94 cm**（長度準；闊度包埋法蘭）
