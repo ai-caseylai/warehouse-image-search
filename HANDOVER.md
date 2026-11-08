@@ -35,7 +35,7 @@
 
 - GitHub：https://github.com/ai-caseylai/warehouse-image-search（public）
 - Branch：`main`
-- 最新 commit：`15df3fa`（長條物件唔亂合併 + 手動 1cm 格線校準）
+- 最新 commit：`167843f`（可見裁剪框 + Canvas 真正前端裁切）
 - 相關 commits：
   - `cd5318e` 動態網格 homography
   - `1e5b905` 以圖搜碼結果顯示相片
@@ -80,8 +80,16 @@ Cloudflare Worker (src/index.js)
   - **手動 1cm 校準**：格紙太波浪／自動偵測失敗時，按「📏 校準 1cm」點兩條相鄰格線，唔需要鋼尺
   - 長條物件（螺絲/pin）唔會合併附近陰影／紙邊
   - 只量 **W × D（足印）**；H 未做
+- 相機：
+  - 預覽有可見裁剪框（12px inset）
+  - 按下快門時用 Canvas **真正裁切**框內內容 → JPEG Blob → FormData 上傳
+  - Preview / 後端分析相片範圍一致（WYSIWYG）
+- AI 尺寸 fallback：
+  - Prompt 要求忽略手指／手部／背景；格紙唔清回 0
+  - UI 合理性檢查：<1cm、>50cm、confidence low、note 含手指／看不到 → 拒絕，唔覆蓋 CV
 - 樣本結果：
   - 5cm × 1.5cm pin：**1.71 × 4.94 cm**（長度準；闊度包埋法蘭）
+  - 長條 bolt：**6.04 × 1.92 cm**（未再包陰影）
   - 其他樣本見 commit 訊息／測試紀錄
 
 ## 6. 已知限制（唔好當 production）
@@ -91,11 +99,12 @@ Cloudflare Worker (src/index.js)
 3. SVG 上傳可造成同源 XSS。
 4. 併發開新碼會撞碼／覆蓋（未修）。
 5. 反光金屬自動框仍可能漏邊；需人手拉角或用 SAM。
-6. 新 vector 索引延遲 1–3 分鐘；即場入貨唔會即刻搜到。
-7. Jina 免費 key 100k tokens/min；連續上傳會 429。
-8. 舊 production 未 deploy 最新 code。
-9. 冇還原 UI、冇 audit log、冇 rate limit、冇角色權限。
-10. H（高度）未量；只量 W × D。
+6. **免費版 AI 尺寸估算不可靠**：Workers AI LLaVA 會亂估（例如見到手指回 0.5×0.5）；現在會被 UI 拒絕，但唔應該當佢係量度工具。要準 → CV + 手動 1cm 校準；AI 只做建議。
+7. 新 vector 索引延遲 1–3 分鐘；即場入貨唔會即刻搜到。
+8. Jina 免費 key 100k tokens/min；連續上傳會 429。
+9. 舊 production 未 deploy 最新 code。
+10. 冇還原 UI、冇 audit log、冇 rate limit、冇角色權限。
+11. H（高度）未量；只量 W × D。
 
 ## 7. 本機開發
 
