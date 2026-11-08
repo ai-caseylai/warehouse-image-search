@@ -412,6 +412,9 @@
     </div>
     <p class="meta" id="measureInfo" style="text-align:left; min-height:32px;"></p>
     <div class="row">
+      <button class="btn" id="measureCalib" type="button" style="width:100%;">📏 校準 1cm（點兩條相鄰格線）</button>
+    </div>
+    <div class="row">
       <button class="btn" id="measureReset" type="button">↺ 重設自動框</button>
       <button class="btn" id="measureAI" type="button">🤖 AI 估算（備用）</button>
     </div>
@@ -864,10 +867,12 @@ $("saveInfoBtn").onclick = async () => {
    俯拍 + 1cm 方格：CV 量 W × D（足印）；H 由人手量。
    AI 只在用戶按「AI 估算」時才 call，作低信心 fallback。 */
 let measure = null;
+let measureCalibMode = false, measureCalibPts = [];
 
 function measureClose() {
   $("measureMask").style.display = "none";
   measure = null;
+  measureCalibMode = false; measureCalibPts = [];
 }
 
 function measureDrawOnly() {
@@ -888,26 +893,37 @@ function measureOverlay() {
   if (!measure) return;
   measureDrawOnly();
   const { res, box } = measure;
-  const gridBad = !res.gridOk ||
-    (!res.homographyUsed && res.confidence === "low") ||
-    (res.gridCheck && (res.gridCheck.rmsPx > 10 || res.gridCheck.maxCellErrPct > 15));
-  const wCm = res.localX ? box.w / res.localX : 0;
-  const dCm = res.localY ? box.h / res.localY : 0;
+  const calib = measure.calibPxPerCm || 0;
+  const localSkew = res.localX && res.localY ? Math.max(res.localX / res.localY, res.localY / res.localX) : 99;
+  const gridBad = !calib && (!res.objectOk || !(res.localX > 20 && res.localY > 20) || localSkew > 1.6);
+  const gridWarn = !calib && !gridBad && (localSkew > 1.25 || (res.gridCheck && (res.gridCheck.rmsPx > 6 || res.gridCheck.maxCellErrPct > 12)));
+  let wCm = res.localX ? box.w / res.localX : 0;
+  let dCm = res.localY ? box.h / res.localY : 0;
+  // 1cm 格紙係正方形；X/Y 差太大通常係其中一軸檢錯，用較大（較可靠）嘅比例計兩邊。
+  if (!calib && !gridBad && localSkew > 1.25) {
+    const cell = Math.max(res.localX, res.localY);
+    wCm = box.w / cell; dCm = box.h / cell;
+  }
+  if (calib) { wCm = box.w / calib; dCm = box.h / calib; }
   $("measureW").value = gridBad ? "" : (wCm ? wCm.toFixed(2) : "");
   $("measureD").value = gridBad ? "" : (dCm ? dCm.toFixed(2) : "");
   const conf = res.confidence === "high" ? "高" : res.confidence === "medium" ? "中" : "低";
   const grid = res.localX && res.localY ? `格距 ${res.localX.toFixed(1)} × ${res.localY.toFixed(1)} px/cm` : "格線未偵測到";
   const gc = res.gridCheck ? `格點 ${res.gridCheck.nx}×${res.gridCheck.ny}・RMS ${res.gridCheck.rmsPx}px・格邊誤差 ${res.gridCheck.maxCellErrPct}%` : "格點校正未完成";
-  $("measureInfo").textContent = gridBad
-    ? `⛔ 格點校正失敗（${gc}）・請重拍（唔會顯示 cm）；可按 AI 估算或人手輸入`
-    : `${grid} ・ ${gc} ・ CV 信心：${conf} ・ ${res.note}`;
+  $("measureInfo").textContent = calib
+    ? `📏 手動校準：1cm = ${calib.toFixed(1)}px ・ 可拉框修正 W/D`
+    : gridBad
+      ? `⛔ 格點/物件偵測失敗（${gc}）・請重拍、按「📏 校準 1cm」或按 AI 估算`
+      : gridWarn
+        ? `⚠️ ${localSkew > 1.25 ? "X/Y 格距不一致（已用較大比例）・" : ""}格點校正誤差較大（${gc}）・數值僅供參考，請人手確認／重拍 ・ ${res.note}`
+        : `${grid} ・ ${gc} ・ CV 信心：${conf} ・ ${res.note}`;
   const ai = $("measureAI");
-  ai.className = "btn" + (res.confidence === "low" || gridBad ? " primary" : "");
-  ai.textContent = res.confidence === "low" || gridBad ? "🤖 AI 估算（建議）" : "🤖 AI 估算（備用）";
+  ai.className = "btn" + (!calib && (res.confidence === "low" || gridBad) ? " primary" : "");
+  ai.textContent = !calib && (res.confidence === "low" || gridBad) ? "🤖 AI 估算（建議）" : "🤖 AI 估算（備用）";
 }
 
 function measureStartDrag(e, mode) {
-  if (!measure) return;
+  if (!measure || measureCalibMode) return;
   e.preventDefault(); e.stopPropagation();
   const startX = e.clientX, startY = e.clientY;
   const b = { ...measure.box };
@@ -959,7 +975,9 @@ function measureLoad(img) {
       localX: 0, localY: 0, confidence: "low", note: "CV 失敗，請人手拉框或用 AI", vx: [], vy: [],
     };
   }
-  measure = { imgW: W, imgH: H, res, box: { ...res.box }, autoBox: { ...res.box }, scaleX: 1, scaleY: 1 };
+  measure = { imgW: W, imgH: H, res, box: { ...res.box }, autoBox: { ...res.box }, scaleX: 1, scaleY: 1, calibPxPerCm: 0 };
+  measureCalibMode = false; measureCalibPts = [];
+  $("measureCalib").textContent = "📏 校準 1cm（點兩條相鄰格線）";
   $("measureMsg").textContent = "自動框只作起點；可拖動／拉角修正，或按 AI 估算。";
   $("measureBox").style.display = "block";
   requestAnimationFrame(() => measureOverlay());
@@ -986,6 +1004,37 @@ $("measureReset").onclick = () => {
   measure.box = { ...measure.autoBox };
   measureOverlay();
 };
+$("measureCalib").onclick = () => {
+  if (!measure) return;
+  measureCalibMode = true; measureCalibPts = [];
+  $("measureCalib").textContent = "點第 1 點…";
+  $("measureMsg").textContent = "請點兩條相鄰 1cm 格線（兩點）做校準。";
+};
+$("measureWrap").addEventListener("pointerdown", (e) => {
+  if (!measure || !measureCalibMode) return;
+  e.preventDefault(); e.stopPropagation();
+  const canvas = $("measureCanvas");
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / (measure.scaleX || 1);
+  const y = (e.clientY - rect.top) / (measure.scaleY || 1);
+  measureCalibPts.push({ x, y });
+  if (measureCalibPts.length === 1) {
+    $("measureCalib").textContent = "點第 2 點…";
+    return;
+  }
+  const [a, b] = measureCalibPts;
+  measureCalibPts = []; measureCalibMode = false;
+  const d = Math.hypot(b.x - a.x, b.y - a.y);
+  if (d < 5) {
+    $("measureCalib").textContent = "📏 校準 1cm（點兩條相鄰格線）";
+    return toast("兩點太近，請重試", "err");
+  }
+  measure.calibPxPerCm = d;
+  $("measureCalib").textContent = "📏 重新校準";
+  $("measureMsg").textContent = "已手動校準；可拉框修正 W/D。";
+  measureOverlay();
+  toast("📏 已校準：1cm = " + d.toFixed(1) + "px");
+});
 $("measureW").addEventListener("change", () => {
   if (!measure || !measure.res.localX) return;
   const v = parseFloat($("measureW").value);

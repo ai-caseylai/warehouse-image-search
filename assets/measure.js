@@ -307,17 +307,23 @@
       // Merge nearby *edge-dense* components only; skip smooth shadows/paper noise.
       let minx = obj.minx, maxx = obj.maxx, miny = obj.miny, maxy = obj.maxy;
       const bw0 = obj.maxx - obj.minx + 1, bh0 = obj.maxy - obj.miny + 1;
-      const radius = Math.max(bw0, bh0) * 0.9;
-      for (const c of comps) {
-        if (c === obj) continue;
-        if (c.area < Math.max(150, obj.area * 0.05)) continue;
-        if ((c.density || 0) < 0.08 || (c.edge || 0) < 60) continue;
-        if (c.cx < obj.cx - radius || c.cx > obj.cx + radius || c.cy < obj.cy - radius || c.cy > obj.cy + radius) continue;
-        if (c.minx < x0 || c.maxx > x1 || c.miny < y0 || c.maxy > y1) continue;
-        const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
-        if (cw > W * 0.45 || ch > H * 0.45) continue;
-        minx = Math.min(minx, c.minx); maxx = Math.max(maxx, c.maxx);
-        miny = Math.min(miny, c.miny); maxy = Math.max(maxy, c.maxy);
+      // Long thin objects (screws, pins): do NOT merge; merging grabs shadows/paper folds.
+      const longObject = Math.max(bw0 / bh0, bh0 / bw0) > 2.2;
+      const gap = Math.max(bw0, bh0) * 0.45;
+      if (!longObject) {
+        for (const c of comps) {
+          if (c === obj) continue;
+          if (c.area < Math.max(150, obj.area * 0.05)) continue;
+          if (c.area > obj.area * 2.5) continue;
+          if ((c.density || 0) < 0.10 || (c.edge || 0) < 60) continue;
+          // must overlap or be within a small gap of the main component
+          if (c.maxx < obj.minx - gap || c.minx > obj.maxx + gap || c.maxy < obj.miny - gap || c.miny > obj.maxy + gap) continue;
+          if (c.minx < x0 || c.maxx > x1 || c.miny < y0 || c.maxy > y1) continue;
+          const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
+          if (cw > W * 0.45 || ch > H * 0.45) continue;
+          minx = Math.min(minx, c.minx); maxx = Math.max(maxx, c.maxx);
+          miny = Math.min(miny, c.miny); maxy = Math.max(maxy, c.maxy);
+        }
       }
       if ((maxx - minx + 1) > bw0 * 1.12 || (maxy - miny + 1) > bh0 * 1.12) grownFlag = true;
       box = { x: minx, y: miny, w: maxx - minx + 1, h: maxy - miny + 1, cx: (minx + maxx) / 2, cy: (miny + maxy) / 2 };
