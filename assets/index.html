@@ -762,11 +762,24 @@ async function submitPhoto(blob, code, force) {
    免費 Jina key 每分鐘 100k tokens；1920×1080 一張要 ~48k，
    縮到 1024 約 16k、512 約 4k，避免 demo 時 429。 */
 function captureCanvas(video, maxDim) {
-  const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+  const vw = video.videoWidth || 1, vh = video.videoHeight || 1;
+  const dw = video.clientWidth || vw, dh = video.clientHeight || vh;
+  const targetAspect = dw > 0 && dh > 0 ? dw / dh : vw / vh;
+  const srcAspect = vw / vh;
+  let sx = 0, sy = 0, sw = vw, sh = vh;
+  // 同 preview 嘅 object-fit: cover 用同一個 crop，做到所見即所得
+  if (srcAspect > targetAspect) {
+    sw = Math.round(vh * targetAspect);
+    sx = Math.round((vw - sw) / 2);
+  } else if (srcAspect < targetAspect) {
+    sh = Math.round(vw / targetAspect);
+    sy = Math.round((vh - sh) / 2);
+  }
+  const scale = Math.min(1, maxDim / Math.max(sw, sh));
   const c = document.createElement("canvas");
-  c.width = Math.max(1, Math.round(video.videoWidth * scale));
-  c.height = Math.max(1, Math.round(video.videoHeight * scale));
-  c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
+  c.width = Math.max(1, Math.round(sw * scale));
+  c.height = Math.max(1, Math.round(sh * scale));
+  c.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
   return c;
 }
 async function compressImageFile(file, maxDim = 1024, quality = 0.85) {
