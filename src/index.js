@@ -629,6 +629,8 @@ async function handleEstimateSize(req, env, url) {
   const prompt = [
     "這是倉庫貨品照片，背景是方格紙（每格 1cm × 1cm）。",
     "請觀察貨品本身（不是方格紙），數一數它佔了多少格，估算它的最大闊度和最大高度（cm，可估到 0.5）。",
+    "只量貨品；不要理會手、手指、手腕或背景物件，切勿用手指做人比例。",
+    "如果手指遮住貨品，忽略手指，只量貨品；如果方格紙唔清楚、貨品被遮擋或無法確定，回 0。",
     "只回覆一行 JSON，不要輸出任何其他文字：",
     '{"width_cm": 數字, "height_cm": 數字, "confidence": "high/medium/low", "note": "10字以內說明"}',
     '如果看不到方格紙或無法估算，回覆 {"width_cm":0,"height_cm":0,"confidence":"low","note":"看不到方格紙"}',

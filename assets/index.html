@@ -1058,22 +1058,32 @@ $("measureAI").onclick = async () => {
     fd.append("code", currentCode);
     const r = await fetch("/estimate-size", { method: "POST", body: fd });
     const d = await r.json();
-    if (r.ok && d.ok && Number(d.width_cm) > 0 && Number(d.height_cm) > 0) {
+    const aw = Number(d.width_cm), ad = Number(d.height_cm);
+    const note = String(d.note || "");
+    // 免費版 VLM 會亂估（例如見到手指就回 0.5×0.5）；不合理就唔覆蓋 CV。
+    const implausible = !(aw >= 1 && ad >= 1 && aw <= 50 && ad <= 50) ||
+      d.confidence === "low" ||
+      /手指|手部|手腕|看不到|無法|唔清楚/.test(note);
+    if (r.ok && d.ok && !implausible) {
       // 俯拍：AI 嘅 width/height 當作足印 W/D
-      $("measureW").value = Number(d.width_cm).toFixed(2);
-      $("measureD").value = Number(d.height_cm).toFixed(2);
+      $("measureW").value = aw.toFixed(2);
+      $("measureD").value = ad.toFixed(2);
       if (measure.res.localX && measure.res.localY) {
         measure.box = {
           x: measure.box.x, y: measure.box.y,
-          w: Math.min(measure.imgW, Number(d.width_cm) * measure.res.localX),
-          h: Math.min(measure.imgH, Number(d.height_cm) * measure.res.localY),
+          w: Math.min(measure.imgW, aw * measure.res.localX),
+          h: Math.min(measure.imgH, ad * measure.res.localY),
         };
         measureDrawOnly();
       }
-      $("measureInfo").textContent = `🤖 AI 估算 W ${Number(d.width_cm).toFixed(2)} × D ${Number(d.height_cm).toFixed(2)} cm（信心 ${d.confidence || "?"}；僅參考，請人手確認）${d.note ? "・" + d.note : ""}`;
+      $("measureInfo").textContent = `🤖 AI 估算 W ${aw.toFixed(2)} × D ${ad.toFixed(2)} cm（信心 ${d.confidence || "?"}；僅參考，請人手確認）${note ? "・" + note : ""}`;
       toast("🤖 AI 估算已填入，請核對");
     } else {
-      toast(d.error || "AI 無法估算（請確保相片內有方格紙）", "err");
+      const msg = r.ok && d.ok
+        ? `🤖 AI 估算不可靠（${aw || 0} × ${ad || 0} cm${note ? "・" + note : ""}）；請用 CV 或「📏 校準 1cm」`
+        : (d.error || "AI 無法估算（請確保相片內有方格紙）");
+      $("measureInfo").textContent = msg;
+      toast(msg, "err");
     }
   } catch (e) { toast("網絡錯誤：" + e.message, "err"); }
   btn.disabled = false; btn.textContent = old;
