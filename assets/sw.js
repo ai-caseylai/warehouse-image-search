@@ -1,5 +1,5 @@
 // Image Vector Search — PWA service worker
-const CACHE = "ivs-cache-v27";
+const CACHE = "ivs-cache-v28";
 const SHELL = ["/", "/index.html", "/measure.js", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {

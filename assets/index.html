@@ -41,6 +41,7 @@
   .corner.tr { top: 12px; right: 12px; border-left: 0; border-bottom: 0; border-radius: 0 6px 0 0; }
   .corner.bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; border-radius: 0 0 0 6px; }
   .corner.br { bottom: 12px; right: 12px; border-left: 0; border-top: 0; border-radius: 0 0 6px 0; }
+  .cropFrame { position: absolute; inset: 12px; z-index: 3; border: 1.5px dashed rgba(255,255,255,.75); border-radius: 6px; pointer-events: none; }
   .camPh { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; text-align: center; padding: 18px; }
   .camPh .big { font-size: 34px; }
   .camPh .t { font-size: 14px; font-weight: 600; margin-top: 8px; color: #fff; }
@@ -188,6 +189,7 @@
         </div>
         <div class="corner tl"></div><div class="corner tr"></div>
         <div class="corner bl"></div><div class="corner br"></div>
+        <div class="cropFrame" id="camCrop"></div>
         <button class="flip" id="camFlip" title="翻轉鏡頭">🔄</button>
         <span class="stageChip" id="stageChip">📷 對準貨品</span>
       </div>
@@ -316,6 +318,7 @@
         </div>
         <div class="corner tl"></div><div class="corner tr"></div>
         <div class="corner bl"></div><div class="corner br"></div>
+        <div class="cropFrame" id="searchCrop"></div>
         <span class="stageChip">📷 對準貨品・即拍即搜</span>
       </div>
     </div>
@@ -761,25 +764,43 @@ async function submitPhoto(blob, code, force) {
 /* 影相／選相都先縮圖：上傳 1024px、搜尋 512px。
    免費 Jina key 每分鐘 100k tokens；1920×1080 一張要 ~48k，
    縮到 1024 約 16k、512 約 4k，避免 demo 時 429。 */
-function captureCanvas(video, maxDim) {
+function captureCanvas(video, maxDim, frameEl) {
   const vw = video.videoWidth || 1, vh = video.videoHeight || 1;
-  const dw = video.clientWidth || vw, dh = video.clientHeight || vh;
-  const targetAspect = dw > 0 && dh > 0 ? dw / dh : vw / vh;
-  const srcAspect = vw / vh;
+  const vr = video.getBoundingClientRect();
+  const targetAspect = vr.width > 0 && vr.height > 0 ? vr.width / vr.height : vw / vh;
+  // 1) 先計 object-fit: cover 喺 source 上實際顯示嘅範圍
   let sx = 0, sy = 0, sw = vw, sh = vh;
-  // 同 preview 嘅 object-fit: cover 用同一個 crop，做到所見即所得
-  if (srcAspect > targetAspect) {
+  if (vw / vh > targetAspect) {
     sw = Math.round(vh * targetAspect);
     sx = Math.round((vw - sw) / 2);
-  } else if (srcAspect < targetAspect) {
+  } else if (vw / vh < targetAspect) {
     sh = Math.round(vw / targetAspect);
     sy = Math.round((vh - sh) / 2);
   }
-  const scale = Math.min(1, maxDim / Math.max(sw, sh));
+  // 2) 再將「可見裁剪框」映射去 source 座標（真正前端裁切）
+  let fx = sx, fy = sy, fw = sw, fh = sh;
+  if (frameEl) {
+    const fr = frameEl.getBoundingClientRect();
+    if (fr.width > 0 && fr.height > 0 && vr.width > 0 && vr.height > 0) {
+      const rx = (fr.left - vr.left) / vr.width;
+      const ry = (fr.top - vr.top) / vr.height;
+      const rw = fr.width / vr.width;
+      const rh = fr.height / vr.height;
+      fx = sx + rx * sw;
+      fy = sy + ry * sh;
+      fw = rw * sw;
+      fh = rh * sh;
+    }
+  }
+  fx = Math.max(0, Math.min(vw - 1, fx));
+  fy = Math.max(0, Math.min(vh - 1, fy));
+  fw = Math.max(1, Math.min(vw - fx, fw));
+  fh = Math.max(1, Math.min(vh - fy, fh));
+  const scale = Math.min(1, maxDim / Math.max(fw, fh));
   const c = document.createElement("canvas");
-  c.width = Math.max(1, Math.round(sw * scale));
-  c.height = Math.max(1, Math.round(sh * scale));
-  c.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  c.width = Math.max(1, Math.round(fw * scale));
+  c.height = Math.max(1, Math.round(fh * scale));
+  c.getContext("2d").drawImage(video, fx, fy, fw, fh, 0, 0, c.width, c.height);
   return c;
 }
 async function compressImageFile(file, maxDim = 1024, quality = 0.85) {
@@ -820,7 +841,7 @@ async function shoot() {
   busy = true;
   $("shootBtn").innerHTML = '<span class="spinner"></span>正在比對資料庫…';
   const fx = $("flashfx"); fx.classList.remove("on"); void fx.offsetWidth; fx.classList.add("on");
-  const c = captureCanvas(v, 1024);
+  const c = captureCanvas(v, 1024, $("camCrop"));
   const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
   if (multiOn()) { busy = false; $("shootBtn").innerHTML = shootLabel(); openMultiPanel(blob); return; }
   try {
@@ -1343,7 +1364,7 @@ $("searchShootBtn").onclick = async () => {
   const v = VIDEOS.search;
   if (!v.videoWidth) return toast("鏡頭未準備好", "err");
   const fx = $("flashfx"); fx.classList.remove("on"); void fx.offsetWidth; fx.classList.add("on");
-  const c = captureCanvas(v, 512);
+  const c = captureCanvas(v, 512, $("searchCrop"));
   const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.9));
   const f = new File([blob], "search-" + Date.now() + ".jpg", { type: "image/jpeg" });
   runSearch({ file: f, btn: $("searchShootBtn") });
